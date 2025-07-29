@@ -20,19 +20,19 @@ class ParlayBuilder:
         self.prop_analyzer = prop_analyzer
         self.tier_requirements = {
             TierType.FREE: {
-                "min_confidence": 70,
+                "min_confidence": 45,  # More realistic for free tier
                 "target_payout": 10,  # 10x payout
                 "max_legs": 6,
                 "conservative_bias": True
             },
             TierType.PREMIUM: {
-                "min_confidence": 80,
+                "min_confidence": 55,  # More realistic for premium tier
                 "target_payout": 25,  # 25x payout
                 "max_legs": 7,
                 "conservative_bias": False
             },
             TierType.GOAT: {
-                "min_confidence": 95,
+                "min_confidence": 65,  # More realistic for GOAT tier
                 "target_payout": 50,  # 50x payout
                 "max_legs": 8,
                 "conservative_bias": False

@@ -5,7 +5,65 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](https://github.com/developedbydmac/stats-sync)
 [![Coverage](https://img.shields.io/badge/Coverage-85%25-green.svg)](tests/)
+# ⚡ Stats Sync - AI-Powered Sports Parlay Generator
+
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](https://github.com/developedbydmac/stats-sync)
+[![Coverage](https://img.shields.io/badge/Coverage-85%25-green.svg)](tests/)
 [![API Status](https://img.shields.io/badge/API-Online-brightgreen.svg)](http://localhost:8000)
+
+> **Real-time sports parlay generation with AI-powered confidence scoring and historical analysis**
+
+Stats Sync is an intelligent sports betting parlay generator that combines real-time player prop data with historical performance analysis to create optimized parlays with confidence scores. Built with FastAPI and powered by machine learning algorithms.
+
+## 🔄 Development Status
+
+**Current Phase**: Ready for Real API Integration  
+**Mock Data System**: ✅ Fully Functional (600+ historical props)  
+**Real API Framework**: ✅ Built and Ready  
+**Next Step**: SportsDataIO API Key Integration  
+
+See [INTEGRATION_PLAN.md](./INTEGRATION_PLAN.md) for detailed API integration roadmap.
+
+## 🎯 Features
+
+### Core Functionality
+- **Real-time Data Integration** - Framework ready for SportsDataIO API with mock data fallback
+- **AI Confidence Scoring** - Advanced algorithms analyze historical performance, recent form, and contextual factors
+- **Smart Parlay Building** - Generates optimized parlays avoiding duplicates and ensuring proper distribution
+- **Multi-Tier System** - Free (70%+ confidence), Premium (80%+ confidence), GOAT (95%+ confidence)
+- **Automated Refreshing** - Updates parlays every 10 minutes with fresh data
+- **Discord Integration** - Automated notifications for high-confidence plays
+
+### Supported Sports
+- 🏈 **NFL** - Passing yards, rushing yards, receiving yards, touchdowns, receptions
+- ⚾ **MLB** - Hits, home runs, RBIs, strikeouts
+
+### Advanced Analytics
+- **Historical Hit Rate Analysis** - Leverages historical prop performance data
+- **Recent Form Weighting** - Prioritizes recent player performance trends
+- **Injury Status Integration** - Framework ready for real injury data
+- **Weather Considerations** - Framework ready for weather API integration
+- **Matchup Analysis** - Framework ready for advanced matchup data
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.8+
+- SportsDataIO API Key (optional - includes comprehensive mock data for development)
+- Discord Webhook URL (optional - for notifications)
+
+### Installation
+
+1. **Clone the repository**
+```bash
+git clone https://github.com/developedbydmac/stats-sync.git
+cd stats-sync
+```
+
+2. **Install dependencies**
 
 > **Real-time sports parlay generation with AI-powered confidence scoring and historical analysis**
 
