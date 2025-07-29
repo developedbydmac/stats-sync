@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stats Sync - Smart Parlay Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #ffffff;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #ffd700, #ff8c00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+        }
+
+        .controls-row {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .sport-toggle {
+            display: flex;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 5px;
+        }
+
+        .sport-btn {
+            background: transparent;
+            border: none;
+            color: #ffffff;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .sport-btn.active {
+            background: #ffd700;
+            color: #1e3c72;
+        }
+
+        .sport-btn:hover:not(.active) {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .tier-filter {
+            display: flex;
+            gap: 10px;
+        }
+
+        .tier-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid transparent;
+            color: #ffffff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .tier-btn.active {
+            border-color: #ffd700;
+            background: rgba(255, 215, 0, 0.1);
+        }
+
+        .tier-btn.free { border-color: #1E90FF; }
+        .tier-btn.premium { border-color: #9932CC; }
+        .tier-btn.goat { border-color: #FFD700; }
+
+        .refresh-btn {
+            background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
+            border: none;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s ease;
+        }
+
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #ffd700;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .parlays-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 25px;
+        }
+
+        .parlay-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .parlay-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .parlay-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .tier-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+
+        .tier-badge.free {
+            background: linear-gradient(45deg, #1E90FF, #00BFFF);
+        }
+
+        .tier-badge.premium {
+            background: linear-gradient(45deg, #9932CC, #BA55D3);
+        }
+
+        .tier-badge.goat {
+            background: linear-gradient(45deg, #FFD700, #FFA500);
+            color: #1e3c72;
+        }
+
+        .confidence-score {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #ffd700;
+        }
+
+        .parlay-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #ffd700;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+
+        .parlay-legs {
+            margin-bottom: 20px;
+        }
+
+        .legs-header {
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #ffd700;
+        }
+
+        .leg-item {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .leg-player {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .leg-details {
+            font-size: 0.9rem;
+            opacity: 0.9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .leg-confidence {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .recommendation {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            border-left: 4px solid #ffd700;
+        }
+
+        .recommendation-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #ffd700;
+        }
+
+        .no-parlays {
+            text-align: center;
+            padding: 60px;
+            opacity: 0.7;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 60px;
+            padding: 30px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            opacity: 0.7;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .controls-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .parlays-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .parlay-stats {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚡ Stats Sync</h1>
+            <p>AI-Powered Smart Parlay Generator with Real-Time Confidence Scoring</p>
+        </div>
+
+        <div class="controls">
+            <div class="controls-row">
+                <div class="sport-toggle">
+                    <button class="sport-btn active" data-sport="NFL">🏈 NFL</button>
+                    <button class="sport-btn" data-sport="MLB">⚾ MLB</button>
+                </div>
+
+                <div class="tier-filter">
+                    <button class="tier-btn active" data-tier="all">All Tiers</button>
+                    <button class="tier-btn free" data-tier="Free">🎯 Free</button>
+                    <button class="tier-btn premium" data-tier="Premium">💎 Premium</button>
+                    <button class="tier-btn goat" data-tier="GOAT">🐐 GOAT</button>
+                </div>
+
+                <button class="refresh-btn" onclick="refreshParlays()">
+                    🔄 Refresh Data
+                </button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Generating optimized parlays...</p>
+        </div>
+
+        <div id="parlays-container">
+            <div class="parlays-grid" id="parlays-grid">
+                <!-- Parlays will be loaded here -->
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>© 2025 Stats Sync - Powered by AI & Real-Time Sports Data</p>
+            <p style="margin-top: 10px; font-size: 0.9rem;">
+                🎯 Free Tier: 70%+ Confidence | 💎 Premium: 80%+ | 🐐 GOAT: 95%+ Single Leg Confidence
+            </p>
+        </div>
+    </div>
+
+    <script>
+        let currentSport = 'NFL';
+        let currentTier = 'all';
+        let refreshInterval;
+
+        // Initialize the app
+        document.addEventListener('DOMContentLoaded', function() {
+            setupEventListeners();
+            loadParlays();
+            
+            // Set up auto-refresh every 10 minutes
+            refreshInterval = setInterval(loadParlays, 600000);
+        });
+
+        function setupEventListeners() {
+            // Sport toggle buttons
+            document.querySelectorAll('.sport-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.sport-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    currentSport = this.dataset.sport;
+                    loadParlays();
+                });
+            });
+
+            // Tier filter buttons
+            document.querySelectorAll('.tier-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    currentTier = this.dataset.tier;
+                    loadParlays();
+                });
+            });
+        }
+
+        async function loadParlays() {
+            showLoading(true);
+            
+            try {
+                const tierParam = currentTier === 'all' ? '' : `&tier=${currentTier}`;
+                const response = await fetch(`/parlays?sport=${currentSport}${tierParam}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const parlays = await response.json();
+                displayParlays(parlays);
+                
+            } catch (error) {
+                console.error('Error loading parlays:', error);
+                showError('Failed to load parlays. Please try again.');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function refreshParlays() {
+            showLoading(true);
+            
+            try {
+                // Trigger refresh on backend
+                await fetch(`/parlays/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sport: currentSport
+                    })
+                });
+                
+                // Wait a moment for refresh to complete
+                setTimeout(loadParlays, 2000);
+                
+            } catch (error) {
+                console.error('Error refreshing parlays:', error);
+                showError('Failed to refresh data. Please try again.');
+                showLoading(false);
+            }
+        }
+
+        function displayParlays(parlays) {
+            const grid = document.getElementById('parlays-grid');
+            
+            if (!parlays || parlays.length === 0) {
+                grid.innerHTML = `
+                    <div class="no-parlays">
+                        <h3>No parlays available</h3>
+                        <p>Try refreshing the data or selecting a different sport/tier.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = parlays.map(parlayResponse => {
+                const parlay = parlayResponse.parlay;
+                const analysis = parlayResponse.analysis;
+                
+                return `
+                    <div class="parlay-card">
+                        <div class="parlay-header">
+                            <span class="tier-badge ${parlay.tier.toLowerCase()}">
+                                ${getTierEmoji(parlay.tier)} ${parlay.tier}
+                            </span>
+                            <span class="confidence-score">${parlay.overall_confidence.toFixed(1)}%</span>
+                        </div>
+
+                        <div class="parlay-stats">
+                            <div class="stat-item">
+                                <div class="stat-value">${formatOdds(parlay.total_odds)}</div>
+                                <div class="stat-label">Total Odds</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">${parlay.expected_payout.toFixed(1)}x</div>
+                                <div class="stat-label">Payout</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">${parlay.legs.length}</div>
+                                <div class="stat-label">Legs</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">${(analysis.expected_hit_rate * 100).toFixed(1)}%</div>
+                                <div class="stat-label">Hit Rate</div>
+                            </div>
+                        </div>
+
+                        <div class="parlay-legs">
+                            <div class="legs-header">🎯 Parlay Legs</div>
+                            ${parlay.legs.slice(0, 4).map(leg => `
+                                <div class="leg-item">
+                                    <div class="leg-player">
+                                        ${leg.player_prop.player_name} (${leg.player_prop.team} vs ${leg.player_prop.opponent})
+                                    </div>
+                                    <div class="leg-details">
+                                        <span>
+                                            ${formatPropType(leg.player_prop.prop_type)} 
+                                            ${leg.selection} ${leg.player_prop.line}
+                                        </span>
+                                        <span class="leg-confidence">${leg.confidence.toFixed(1)}%</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            ${parlay.legs.length > 4 ? `
+                                <div class="leg-item" style="text-align: center; opacity: 0.7;">
+                                    + ${parlay.legs.length - 4} more legs...
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <div class="recommendation">
+                            <div class="recommendation-title">📈 Analysis</div>
+                            <div><strong>Risk:</strong> ${analysis.risk_assessment}</div>
+                            <div style="margin-top: 8px;"><strong>Recommendation:</strong> ${analysis.recommendation}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+            document.getElementById('parlays-container').style.opacity = show ? '0.5' : '1';
+        }
+
+        function showError(message) {
+            const grid = document.getElementById('parlays-grid');
+            grid.innerHTML = `
+                <div class="no-parlays">
+                    <h3>⚠️ Error</h3>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+
+        function getTierEmoji(tier) {
+            const emojis = {
+                'Free': '🎯',
+                'Premium': '💎',
+                'GOAT': '🐐'
+            };
+            return emojis[tier] || '⚡';
+        }
+
+        function formatOdds(odds) {
+            return odds > 0 ? `+${odds}` : `${odds}`;
+        }
+
+        function formatPropType(propType) {
+            return propType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        }
+
+        // Cleanup interval on page unload
+        window.addEventListener('beforeunload', function() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+        });
+    </script>
+</body>
+</html>
