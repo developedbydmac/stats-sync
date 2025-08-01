@@ -41,6 +41,8 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Stats Sync API...")
     if scheduler_service:
         scheduler_service.stop()
+    if parlay_service:
+        await parlay_service.cleanup()
 
 app = FastAPI(
     title="Stats Sync API",
@@ -144,6 +146,48 @@ async def get_player_props(sport: SportType, date: str = None):
     except Exception as e:
         logger.error(f"Error retrieving props: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving props: {str(e)}")
+
+@app.get("/parlays/live", response_model=List[ParlayResponse])
+async def get_live_parlays(sport: SportType, tier: TierType = None):
+    """
+    Get live/halftime parlays for in-game betting
+    
+    Args:
+        sport: Sport type (mlb, nfl, nba, nhl)
+        tier: Optional tier filter (conservative, goat)
+        
+    Returns:
+        List of live parlay recommendations
+    """
+    try:
+        logger.info(f"Generating live parlays for {sport.value}")
+        
+        # Fetch live props from OddsJam
+        live_props = await parlay_service.oddsjam_service.fetch_live_props(sport)
+        
+        if not live_props:
+            logger.warning(f"No live props available for {sport.value}")
+            return []
+        
+        # Generate parlays from live props using the parlay builder
+        parlays = await parlay_service.parlay_builder.build_parlays(live_props, tier)
+        
+        logger.info(f"Generated {len(parlays)} live parlays for {sport.value}")
+        
+        # Convert to the same format as regular parlays
+        parlay_responses = []
+        for parlay in parlays:
+            parlay_responses.append(ParlayResponse(
+                parlay=parlay,
+                tier_requirements={"min_confidence": 80.0, "is_live": True},
+                analysis={"source": "oddsjam_live", "market_type": "live/halftime"}
+            ))
+        
+        return parlay_responses
+        
+    except Exception as e:
+        logger.error(f"Error generating live parlays: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating live parlays: {str(e)}")
 
 @app.get("/stats")
 async def get_stats():

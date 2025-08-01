@@ -1,6 +1,7 @@
 import aiohttp
 import asyncio
 import os
+import ssl
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import logging
@@ -19,13 +20,24 @@ class SportsDataService:
         
         if not self.api_key:
             logger.warning("SPORTSDATAIO_API_KEY not found in environment variables")
+        else:
+            logger.info(f"SportsDataIO API key detected: {self.api_key[:8]}...")
     
     async def get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session with proper configuration"""
         if self.session is None or self.session.closed:
             timeout = aiohttp.ClientTimeout(total=30)
+            
+            # Create SSL context that doesn't verify certificates (for development)
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            
             self.session = aiohttp.ClientSession(
                 timeout=timeout,
+                connector=connector,
                 headers={
                     "Ocp-Apim-Subscription-Key": self.api_key or "demo_key",
                     "Content-Type": "application/json"
@@ -57,25 +69,20 @@ class SportsDataService:
                 logger.info(f"Using mock data for {sport.value} props on {date}")
                 return await self._get_mock_props(sport, date)
             
-            # TODO: IMPLEMENT REAL API INTEGRATION
-            # 1. Update endpoint URLs to match actual SportsDataIO API structure
-            # 2. Add proper request headers and authentication
-            # 3. Implement response data transformation to match PlayerProp model
-            # 4. Add rate limiting and retry logic
-            # 5. Handle different prop types (over/under, player vs team props)
-            
             session = await self.get_session()
             endpoint = self._get_props_endpoint(sport, date)
+            logger.info(f"Fetching real data from: {endpoint}")
             
             async with session.get(endpoint) as response:
                 if response.status == 200:
                     data = await response.json()
-                    # TODO: Transform API response to match our data structure
+                    logger.info(f"Successfully fetched {len(data)} raw props from API")
+                    # Transform API response to match our data structure
                     transformed_data = await self._transform_api_response(data, sport)
-                    logger.info(f"Fetched {len(transformed_data)} props for {sport.value} on {date}")
+                    logger.info(f"Successfully transformed to {len(transformed_data)} usable props for {sport.value} on {date}")
                     return transformed_data
                 else:
-                    logger.error(f"API request failed with status {response.status}")
+                    logger.error(f"API request failed with status {response.status}: {await response.text()}")
                     return await self._get_mock_props(sport, date)
                     
         except Exception as e:
@@ -84,26 +91,16 @@ class SportsDataService:
     
     def _get_props_endpoint(self, sport: SportType, date: str) -> str:
         """Get the appropriate API endpoint for the sport"""
-        # TODO: Update these endpoints to match actual SportsDataIO API structure
-        # Current endpoints are placeholders - verify with API documentation
         if sport == SportType.NFL:
-            return f"{self.base_url}/nfl/odds/{date}/playerprop"
+            return f"{self.base_url}/nfl/odds/json/PlayerPropsByDate/{date}"
         elif sport == SportType.MLB:
-            return f"{self.base_url}/mlb/odds/{date}/playerprop"
+            return f"{self.base_url}/mlb/odds/json/PlayerPropsByDate/{date}"
         else:
             raise ValueError(f"Unsupported sport: {sport}")
     
     async def _transform_api_response(self, api_data: List[Dict], sport: SportType) -> List[Dict[str, Any]]:
         """
         Transform raw API response to match our internal data structure
-        
-        TODO: CRITICAL - Implement this method for real API integration
-        This method needs to:
-        1. Parse SportsDataIO response format
-        2. Extract player props (over/under lines, odds)
-        3. Map to our PropType enum values
-        4. Handle missing or malformed data
-        5. Add confidence scoring hooks
         
         Args:
             api_data: Raw response from SportsDataIO API
@@ -112,9 +109,81 @@ class SportsDataService:
         Returns:
             List of props in our internal format
         """
-        # Placeholder - replace with actual transformation logic
-        logger.warning("Using placeholder transformation - implement real API mapping")
-        return api_data
+        transformed_props = []
+        
+        for prop in api_data:
+            try:
+                # Extract basic prop information
+                player_name = prop.get("Name", "Unknown Player")
+                team = prop.get("Team", "")
+                opponent = prop.get("Opponent", "")
+                description = prop.get("Description", "")
+                over_under = prop.get("OverUnder", 0)
+                over_payout = prop.get("OverPayout", -110)
+                under_payout = prop.get("UnderPayout", -110)
+                line_value = float(over_under)
+                
+                # Map SportsDataIO description to our PropType
+                prop_type = self._map_description_to_prop_type(description, sport, line_value)
+                if not prop_type:
+                    continue  # Skip props we don't support
+                
+                # Create our internal prop format
+                transformed_prop = {
+                    "player_name": player_name,
+                    "team": team,
+                    "opponent": opponent,
+                    "prop_type": prop_type,
+                    "line": line_value,
+                    "over_odds": int(over_payout),
+                    "under_odds": int(under_payout),
+                    "game_date": prop.get("DateTime", "")[:10] if prop.get("DateTime") else "",
+                    "position": "",  # Not provided in SportsDataIO response
+                    "source": "sportsdata_io"
+                }
+                
+                transformed_props.append(transformed_prop)
+                
+            except Exception as e:
+                logger.warning(f"Error transforming prop: {str(e)}")
+                continue
+        
+        logger.info(f"Transformed {len(transformed_props)} props from {len(api_data)} raw props")
+        return transformed_props
+    
+    def _map_description_to_prop_type(self, description: str, sport: SportType, line: float = None) -> Optional[str]:
+        """Map SportsDataIO description to our PropType"""
+        description_lower = description.lower()
+        
+        if sport == SportType.MLB:
+            if "hits" in description_lower:
+                return "hits"
+            elif "home runs" in description_lower or "home run" in description_lower:
+                return "home_runs"
+            elif "runs batted in" in description_lower or "rbi" in description_lower:
+                return "rbis"
+            elif "strikeouts" in description_lower:
+                # Distinguish between batter strikeouts (low line ~1.5-4.4) and pitcher strikeouts (high line ~8-20)
+                if line and line >= 8.0:
+                    return "pitcher_strikeouts"  # Pitcher strikeouts (how many batters they strike out)
+                else:
+                    return "batter_strikeouts"   # Batter strikeouts (how many times they strike out)
+            # Add more MLB mappings as needed
+            
+        elif sport == SportType.NFL:
+            if "passing yards" in description_lower:
+                return "passing_yards"
+            elif "rushing yards" in description_lower:
+                return "rushing_yards"
+            elif "receiving yards" in description_lower:
+                return "receiving_yards"
+            elif "touchdown" in description_lower:
+                return "touchdowns"
+            elif "receptions" in description_lower:
+                return "receptions"
+            # Add more NFL mappings as needed
+        
+        return None  # Unsupported prop type
     
     async def _get_mock_props(self, sport: SportType, date: str) -> List[Dict[str, Any]]:
         """Generate mock prop data for development/demo purposes"""

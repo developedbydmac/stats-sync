@@ -8,6 +8,8 @@ from src.models.parlay import (
     Parlay, PlayerProp, SportType, TierType, PropType, ParlayResponse, SystemStats
 )
 from src.services.sports_data_service import SportsDataService
+from src.services.fanduel_service import FanDuelService
+from src.services.oddsjam_service import OddsJamService
 from src.services.parlay_builder import ParlayBuilder
 from src.utils.prop_analyzer import PropAnalyzer
 from src.utils.logger import setup_logger
@@ -19,6 +21,8 @@ class ParlayService:
     
     def __init__(self):
         self.sports_data_service = SportsDataService()
+        self.fanduel_service = FanDuelService()
+        self.oddsjam_service = OddsJamService()
         self.prop_analyzer = PropAnalyzer(os.getenv("PROPS_CSV_PATH", "./data/historical_props.csv"))
         self.parlay_builder = ParlayBuilder(self.prop_analyzer)
         
@@ -109,62 +113,108 @@ class ParlayService:
             await self.refresh_parlays(sport)
     
     async def get_player_props(self, sport: SportType, date: str = None) -> List[Dict[str, Any]]:
-        """Get raw player props data"""
-        return await self.sports_data_service.fetch_player_props(sport, date)
+        """Get raw player props data from all sources"""
+        # Fetch from all sources
+        sports_data_props = await self.sports_data_service.fetch_player_props(sport, date)
+        fanduel_props = await self.fanduel_service.fetch_fanduel_odds(sport, date)
+        oddsjam_props = await self.oddsjam_service.fetch_player_props(sport, date)
+        
+        # Convert to unified format for API response
+        all_props = []
+        
+        # Add SportsDataIO props (already dictionaries)
+        for prop in sports_data_props:
+            all_props.append(prop)
+        
+        # Add FanDuel props (PlayerProp objects need conversion)
+        for prop in fanduel_props:
+            all_props.append({
+                "player_name": prop.player_name,
+                "team": prop.team,
+                "opponent": prop.opponent,
+                "prop_type": prop.prop_type.value,
+                "line": prop.line,
+                "over_odds": prop.over_odds,
+                "under_odds": prop.under_odds,
+                "game_date": getattr(prop, 'game_date', 'N/A'),
+                "position": getattr(prop, 'position', ''),
+                "source": getattr(prop, 'source', 'fanduel')
+            })
+        
+        # Add OddsJam props (PlayerProp objects need conversion)
+        for prop in oddsjam_props:
+            all_props.append({
+                "player_name": prop.player_name,
+                "team": prop.team,
+                "opponent": prop.opponent,
+                "prop_type": prop.prop_type.value,
+                "line": prop.line,
+                "over_odds": prop.over_odds,
+                "under_odds": prop.under_odds,
+                "game_date": getattr(prop, 'game_date', 'N/A'),
+                "position": getattr(prop, 'position', ''),
+                "source": getattr(prop, 'source', 'oddsjam_fanduel')
+            })
+        
+        logger.info(f"Retrieved {len(sports_data_props)} SportsDataIO + {len(fanduel_props)} FanDuel + {len(oddsjam_props)} OddsJam = {len(all_props)} total props")
+        return all_props
     
     async def _generate_fresh_parlays(self, sport: SportType, tier: TierType = None) -> List[Parlay]:
         """Generate fresh parlays from current data"""
-        # Fetch current props
-        props_data = await self.sports_data_service.fetch_player_props(sport)
+        # Fetch props from all sources
+        logger.info(f"Fetching props from SportsDataIO, FanDuel, and OddsJam for {sport.value}")
         
-        # Convert to PlayerProp objects with confidence scores
-        player_props = []
-        for prop_data in props_data:
+        sports_data_raw = await self.sports_data_service.fetch_player_props(sport)
+        fanduel_props = await self.fanduel_service.fetch_fanduel_odds(sport)
+        oddsjam_props = await self.oddsjam_service.fetch_player_props(sport)
+        
+        # Convert SportsDataIO dictionaries to PlayerProp objects
+        sports_data_props = []
+        for prop_data in sports_data_raw:
             try:
                 prop_type = PropType(prop_data.get("prop_type", "").lower())
             except ValueError:
-                # Skip unknown prop types
-                continue
-                
-            confidence_score = self.prop_analyzer.calculate_confidence_score(
-                prop_data["player_name"],
-                prop_type,
-                prop_data["line"]
-            )
+                continue  # Skip unknown prop types
             
-            hit_rate = self.prop_analyzer.get_player_hit_rate(
-                prop_data["player_name"],
-                prop_type
-            )
-            
-            recent_performance = self.prop_analyzer.get_recent_performance(
-                prop_data["player_name"],
-                prop_type
-            )
-            
-            # Get injury status
-            injury_status = await self._get_player_injury_status(
-                prop_data["player_name"], sport
-            )
-            
-            player_prop = PlayerProp(
+            prop = PlayerProp(
                 player_name=prop_data["player_name"],
                 team=prop_data["team"],
                 opponent=prop_data["opponent"],
                 prop_type=prop_type,
-                line=prop_data["line"],
-                over_odds=prop_data["over_odds"],
-                under_odds=prop_data["under_odds"],
-                confidence_score=confidence_score,
-                hit_rate=hit_rate,
-                recent_performance=recent_performance,
-                injury_status=injury_status
+                line=float(prop_data["line"]),
+                over_odds=int(prop_data["over_odds"]),
+                under_odds=int(prop_data["under_odds"]),
+                game_date=prop_data.get("game_date", ""),
+                position=prop_data.get("position", ""),
+                source=prop_data.get("source", "sportsdata_io"),
+                confidence_score=75.0,  # Will be recalculated
+                hit_rate=0.55  # Will be recalculated
+            )
+            sports_data_props.append(prop)
+        
+        # Combine all props - OddsJam has highest priority for real FanDuel odds
+        all_props = sports_data_props + fanduel_props + oddsjam_props
+        logger.info(f"Combined {len(sports_data_props)} SportsDataIO + {len(fanduel_props)} FanDuel + {len(oddsjam_props)} OddsJam = {len(all_props)} total props")
+        
+        # Calculate confidence scores for all props
+        for prop in all_props:
+            confidence_score = self.prop_analyzer.calculate_confidence_score(
+                prop.player_name,
+                prop.prop_type,
+                prop.line
             )
             
-            player_props.append(player_prop)
+            hit_rate = self.prop_analyzer.get_player_hit_rate(
+                prop.player_name,
+                prop.prop_type
+            )
+            
+            # Update prop with calculated values
+            prop.confidence_score = confidence_score
+            prop.hit_rate = hit_rate
         
-        # Build parlays
-        parlays = self.parlay_builder.build_parlays(player_props, sport, tier)
+        # Build parlays using all combined props
+        parlays = self.parlay_builder.build_parlays(all_props, sport, tier)
         self.stats["total_parlays_generated"] += len(parlays)
         
         return parlays
@@ -268,3 +318,4 @@ class ParlayService:
     async def cleanup(self):
         """Clean up resources"""
         await self.sports_data_service.close_session()
+        await self.oddsjam_service.close_session()
