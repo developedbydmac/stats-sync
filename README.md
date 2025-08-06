@@ -5,29 +5,37 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](https://github.com/developedbydmac/stats-sync)
 [![Coverage](https://img.shields.io/badge/Coverage-85%25-green.svg)](tests/)
-# ⚡ Stats Sync - AI-Powered Sports Parlay Generator
-
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](https://github.com/developedbydmac/stats-sync)
-[![Coverage](https://img.shields.io/badge/Coverage-85%25-green.svg)](tests/)
 [![API Status](https://img.shields.io/badge/API-Online-brightgreen.svg)](http://localhost:8000)
 
-> **Real-time sports parlay generation with AI-powered confidence scoring and historical analysis**
+> **Real-time sports parlay generation with AI-powered confidence scoring, pregame analysis, and live betting predictions**
 
-Stats Sync is an intelligent sports betting parlay generator that combines real-time player prop data with historical performance analysis to create optimized parlays with confidence scores. Built with FastAPI and powered by machine learning algorithms.
+Stats Sync is an intelligent sports betting platform that combines real-time player prop data with historical performance analysis to create optimized parlays with confidence scores. Now featuring dedicated pregame and halftime prediction services powered by SportsDataIO API integration.
+
+## 🚀 New Features: Prediction Services
+
+### 🎯 Pregame Prediction Service
+- **Comprehensive Game Analysis**: Team statistics, player performance, weather conditions
+- **Player Prop Predictions**: AI-powered recommendations with confidence scoring
+- **Optimized Parlays**: Multi-leg parlays built from high-confidence predictions
+- **Betting Strategies**: Bankroll allocation and risk assessment recommendations
+
+### ⚡ Halftime/Live Prediction Service  
+- **Real-Time Analysis**: Live game momentum and scoring trends
+- **In-Game Adjustments**: Dynamic prop recommendations based on current game state
+- **Live Betting Parlays**: Time-sensitive opportunities for halftime betting
+- **Market Monitoring**: Live odds tracking and optimal timing recommendations
 
 ## 🔄 Development Status
 
-**Current Phase**: Ready for Real API Integration  
+**Current Phase**: Production Ready with SportsDataIO Integration  
+**Prediction Services**: ✅ Fully Implemented (Pregame & Halftime)  
 **Mock Data System**: ✅ Fully Functional (600+ historical props)  
 **Real API Framework**: ✅ Built and Ready  
-**Next Step**: SportsDataIO API Key Integration  
+**SportsDataIO Integration**: ✅ Active  
 
-See [INTEGRATION_PLAN.md](./INTEGRATION_PLAN.md) for detailed API integration roadmap.
+See [API_DOCUMENTATION.md](./API_DOCUMENTATION.md) for complete endpoint documentation.
 
-## 🎯 Features
+## 🎯 Core Features
 
 ### Core Functionality
 - **Real-time Data Integration** - Framework ready for SportsDataIO API with mock data fallback
@@ -118,17 +126,76 @@ cp .env.example .env
 
 4. **Run the application**
 ```bash
+# Option 1: Use the enhanced startup script
+python start_server.py
+
+# Option 2: Direct FastAPI run
 python main.py
+
+# Option 3: Using uvicorn
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-5. **Access the web interface**
+5. **Test the prediction services**
+```bash
+# Test the API endpoints
+python test_api.py
+
+# Or manually test key endpoints
+curl http://localhost:8000/health
+curl http://localhost:8000/predictions/status
+```
+
+6. **Access the web interface**
 ```
 http://localhost:8000
 ```
 
-## 📊 API Endpoints
+## 🔮 Prediction API Endpoints
 
-### Core Endpoints
+### Pregame Predictions
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/predictions/pregame` | Trigger pregame analysis |
+| `GET` | `/predictions/pregame/{sport}` | Get pregame predictions |
+
+### Halftime/Live Predictions  
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/predictions/halftime` | Trigger live game analysis |
+| `GET` | `/predictions/halftime/{sport}` | Get live predictions |
+
+### Status & Monitoring
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/predictions/status` | Service status and configuration |
+| `GET` | `/health` | API health check |
+
+### Example Prediction Usage
+
+```bash
+# Trigger pregame predictions for today's NFL games
+curl -X POST "http://localhost:8000/predictions/pregame?sport=NFL&tier=Premium"
+
+# Get the generated predictions
+curl "http://localhost:8000/predictions/pregame/NFL?tier=Premium"
+
+# Trigger live/halftime predictions
+curl -X POST "http://localhost:8000/predictions/halftime?sport=NFL&tier=GOAT"
+
+# Get live predictions
+curl "http://localhost:8000/predictions/halftime/NFL?tier=GOAT"
+
+# Check service status
+curl "http://localhost:8000/predictions/status"
+```
+
+## 📊 Core API Endpoints
+
+### Legacy Parlay Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -136,7 +203,7 @@ http://localhost:8000
 | `GET` | `/parlays` | Get parlays with optional filters |
 | `POST` | `/parlays/refresh` | Force refresh parlay data |
 | `GET` | `/props/{sport}` | Get raw player props |
-| `GET` | `/health` | Health check |
+| `GET` | `/parlays/live` | Get live/halftime parlays |
 | `GET` | `/stats` | System statistics |
 
 ### Example API Usage

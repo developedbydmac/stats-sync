@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
 from dotenv import load_dotenv
+from datetime import datetime
 from typing import List, Dict, Any
 import logging
 from contextlib import asynccontextmanager
@@ -12,6 +13,8 @@ from contextlib import asynccontextmanager
 from src.models.parlay import ParlayResponse, SportType, TierType
 from src.services.parlay_service import ParlayService
 from src.services.scheduler_service import SchedulerService
+from src.services.pregame_prediction_service import PregamePredictionService
+from src.services.halftime_prediction_service import HalftimePredictionService
 from src.utils.logger import setup_logger
 
 # Load environment variables
@@ -23,16 +26,20 @@ logger = setup_logger()
 # Global services
 parlay_service = None
 scheduler_service = None
+pregame_service = None
+halftime_service = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    global parlay_service, scheduler_service
+    global parlay_service, scheduler_service, pregame_service, halftime_service
     
     # Startup
     logger.info("Starting Stats Sync API...")
     parlay_service = ParlayService()
     scheduler_service = SchedulerService(parlay_service)
+    pregame_service = PregamePredictionService()
+    halftime_service = HalftimePredictionService()
     scheduler_service.start()
     
     yield
@@ -73,6 +80,209 @@ async def read_root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "stats-sync-api"}
+
+@app.post("/predictions/pregame")
+async def trigger_pregame_predictions(
+    background_tasks: BackgroundTasks,
+    sport: SportType,
+    date: str = None,
+    tier: TierType = None
+):
+    """
+    Trigger pregame prediction script for a specific sport and date
+    
+    Args:
+        sport: Sport type (NFL, MLB, NBA, NHL)
+        date: Game date in YYYY-MM-DD format (optional, defaults to today)
+        tier: Tier level for filtering parlays (optional)
+    
+    Returns:
+        Confirmation message and prediction results
+    """
+    try:
+        logger.info(f"Triggering pregame predictions for {sport.value} on {date}")
+        
+        # Run prediction in background to avoid timeout
+        background_tasks.add_task(
+            _run_pregame_prediction_task, 
+            sport, 
+            date, 
+            tier
+        )
+        
+        return {
+            "message": f"Pregame prediction script triggered for {sport.value}",
+            "sport": sport.value,
+            "date": date,
+            "tier": tier.value if tier else None,
+            "status": "processing"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error triggering pregame predictions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error triggering pregame predictions: {str(e)}")
+
+@app.get("/predictions/pregame/{sport}")
+async def get_pregame_predictions(
+    sport: SportType,
+    date: str = None,
+    tier: TierType = None
+):
+    """
+    Get pregame predictions for a specific sport and date
+    
+    Args:
+        sport: Sport type (NFL, MLB, NBA, NHL)
+        date: Game date in YYYY-MM-DD format (optional, defaults to today)
+        tier: Tier level for filtering parlays (optional)
+    
+    Returns:
+        Pregame predictions and analysis
+    """
+    try:
+        logger.info(f"Getting pregame predictions for {sport.value} on {date}")
+        
+        predictions = await pregame_service.generate_pregame_predictions(sport, date, tier)
+        
+        return {
+            "status": "success",
+            "data": predictions,
+            "metadata": {
+                "sport": sport.value,
+                "date": date,
+                "tier": tier.value if tier else None,
+                "generated_at": predictions.get("analysis", {}).get("timestamp")
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting pregame predictions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting pregame predictions: {str(e)}")
+
+@app.post("/predictions/halftime")
+async def trigger_halftime_predictions(
+    background_tasks: BackgroundTasks,
+    sport: SportType,
+    game_id: str = None,
+    tier: TierType = None
+):
+    """
+    Trigger halftime/live prediction script for a specific sport
+    
+    Args:
+        sport: Sport type (NFL, MLB, NBA, NHL)
+        game_id: Specific game ID (optional, analyzes all live games if not provided)
+        tier: Tier level for filtering parlays (optional)
+    
+    Returns:
+        Confirmation message and prediction results
+    """
+    try:
+        logger.info(f"Triggering halftime predictions for {sport.value}, game: {game_id}")
+        
+        # Run prediction in background to avoid timeout
+        background_tasks.add_task(
+            _run_halftime_prediction_task, 
+            sport, 
+            game_id, 
+            tier
+        )
+        
+        return {
+            "message": f"Halftime prediction script triggered for {sport.value}",
+            "sport": sport.value,
+            "game_id": game_id,
+            "tier": tier.value if tier else None,
+            "status": "processing"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error triggering halftime predictions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error triggering halftime predictions: {str(e)}")
+
+@app.get("/predictions/halftime/{sport}")
+async def get_halftime_predictions(
+    sport: SportType,
+    game_id: str = None,
+    tier: TierType = None
+):
+    """
+    Get halftime/live predictions for a specific sport
+    
+    Args:
+        sport: Sport type (NFL, MLB, NBA, NHL)
+        game_id: Specific game ID (optional, analyzes all live games if not provided)
+        tier: Tier level for filtering parlays (optional)
+    
+    Returns:
+        Halftime/live predictions and analysis
+    """
+    try:
+        logger.info(f"Getting halftime predictions for {sport.value}, game: {game_id}")
+        
+        predictions = await halftime_service.generate_halftime_predictions(sport, game_id, tier)
+        
+        return {
+            "status": "success",
+            "data": predictions,
+            "metadata": {
+                "sport": sport.value,
+                "game_id": game_id,
+                "tier": tier.value if tier else None,
+                "generated_at": predictions.get("analysis", {}).get("timestamp")
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting halftime predictions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting halftime predictions: {str(e)}")
+
+@app.get("/predictions/status")
+async def get_prediction_status():
+    """
+    Get status of prediction services
+    
+    Returns:
+        Status of pregame and halftime prediction services
+    """
+    try:
+        sportsdata_api_key = os.getenv("SPORTSDATA_API_KEY")
+        
+        status = {
+            "pregame_service": "initialized" if pregame_service else "not_initialized",
+            "halftime_service": "initialized" if halftime_service else "not_initialized",
+            "sportsdata_api_configured": bool(sportsdata_api_key),
+            "api_key_partial": f"{sportsdata_api_key[:8]}..." if sportsdata_api_key else None,
+            "supported_sports": [sport.value for sport in SportType],
+            "supported_tiers": [tier.value for tier in TierType],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        return status
+        
+    except Exception as e:
+        logger.error(f"Error getting prediction status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting prediction status: {str(e)}")
+
+async def _run_pregame_prediction_task(sport: SportType, date: str, tier: TierType):
+    """Background task for running pregame predictions"""
+    try:
+        logger.info(f"Running pregame prediction task for {sport.value} on {date}")
+        predictions = await pregame_service.generate_pregame_predictions(sport, date, tier)
+        logger.info(f"Completed pregame prediction task for {sport.value}")
+        return predictions
+    except Exception as e:
+        logger.error(f"Error in pregame prediction task: {str(e)}")
+
+async def _run_halftime_prediction_task(sport: SportType, game_id: str, tier: TierType):
+    """Background task for running halftime predictions"""
+    try:
+        logger.info(f"Running halftime prediction task for {sport.value}, game: {game_id}")
+        predictions = await halftime_service.generate_halftime_predictions(sport, game_id, tier)
+        logger.info(f"Completed halftime prediction task for {sport.value}")
+        return predictions
+    except Exception as e:
+        logger.error(f"Error in halftime prediction task: {str(e)}")
 
 @app.get("/parlays", response_model=List[ParlayResponse])
 async def get_parlays(
