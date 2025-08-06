@@ -1,61 +1,22 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 import os
 from dotenv import load_dotenv
-from datetime import datetime
-from typing import List, Dict, Any
-import logging
-from contextlib import asynccontextmanager
 
-from src.models.parlay import ParlayResponse, SportType, TierType
-from src.services.parlay_service import ParlayService
-from src.services.scheduler_service import SchedulerService
-from src.services.pregame_prediction_service import PregamePredictionService
-from src.services.halftime_prediction_service import HalftimePredictionService
-from src.utils.logger import setup_logger
+from pregame import pregame_prediction
+from halftime import halftime_prediction
+from sportsdata import SportsDataService
 
 # Load environment variables
 load_dotenv()
 
-# Setup logging
-logger = setup_logger()
-
-# Global services
-parlay_service = None
-scheduler_service = None
-pregame_service = None
-halftime_service = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup and shutdown events"""
-    global parlay_service, scheduler_service, pregame_service, halftime_service
-    
-    # Startup
-    logger.info("Starting Stats Sync API...")
-    parlay_service = ParlayService()
-    scheduler_service = SchedulerService(parlay_service)
-    pregame_service = PregamePredictionService()
-    halftime_service = HalftimePredictionService()
-    scheduler_service.start()
-    
-    yield
-    
-    # Shutdown
-    logger.info("Shutting down Stats Sync API...")
-    if scheduler_service:
-        scheduler_service.stop()
-    if parlay_service:
-        await parlay_service.cleanup()
-
 app = FastAPI(
     title="Stats Sync API",
-    description="Real-time sports parlay generation with confidence scoring",
-    version="1.0.0",
-    lifespan=lifespan
+    description="Sports prediction API with SportsDataIO integration",
+    version="1.0.0"
 )
 
 # Configure CORS
@@ -67,13 +28,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
 @app.get("/", response_class=HTMLResponse)
-async def read_root():
-    """Serve the main HTML page"""
-    with open("static/index.html", "r") as f:
+async def frontend():
+    """Serve the frontend dashboard"""
+    with open("frontend.html", "r") as f:
         return HTMLResponse(content=f.read())
 
 @app.get("/health")
@@ -81,334 +39,218 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "stats-sync-api"}
 
-@app.post("/predictions/pregame")
-async def trigger_pregame_predictions(
-    background_tasks: BackgroundTasks,
-    sport: SportType,
-    date: str = None,
-    tier: TierType = None
-):
-    """
-    Trigger pregame prediction script for a specific sport and date
-    
-    Args:
-        sport: Sport type (NFL, MLB, NBA, NHL)
-        date: Game date in YYYY-MM-DD format (optional, defaults to today)
-        tier: Tier level for filtering parlays (optional)
-    
-    Returns:
-        Confirmation message and prediction results
-    """
+@app.get("/pregame/{player_id}")
+def pregame_route(player_id: int, prop_line: float = Query(..., description="Current prop line for the player")):
+    """Pregame prediction for a player"""
     try:
-        logger.info(f"Triggering pregame predictions for {sport.value} on {date}")
-        
-        # Run prediction in background to avoid timeout
-        background_tasks.add_task(
-            _run_pregame_prediction_task, 
-            sport, 
-            date, 
-            tier
-        )
-        
-        return {
-            "message": f"Pregame prediction script triggered for {sport.value}",
-            "sport": sport.value,
-            "date": date,
-            "tier": tier.value if tier else None,
-            "status": "processing"
-        }
-        
+        result = pregame_prediction(player_id, prop_line)
+        return result
     except Exception as e:
-        logger.error(f"Error triggering pregame predictions: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error triggering pregame predictions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/predictions/pregame/{sport}")
-async def get_pregame_predictions(
-    sport: SportType,
-    date: str = None,
-    tier: TierType = None
-):
-    """
-    Get pregame predictions for a specific sport and date
-    
-    Args:
-        sport: Sport type (NFL, MLB, NBA, NHL)
-        date: Game date in YYYY-MM-DD format (optional, defaults to today)
-        tier: Tier level for filtering parlays (optional)
-    
-    Returns:
-        Pregame predictions and analysis
-    """
+@app.get("/halftime/{game_id}")
+def halftime_route(game_id: int, player_id: int = Query(..., description="Player ID for halftime prediction"), halftime_prop_line: float = Query(..., description="Halftime prop line")):
+    """Halftime prediction for a player in a game"""
     try:
-        logger.info(f"Getting pregame predictions for {sport.value} on {date}")
-        
-        predictions = await pregame_service.generate_pregame_predictions(sport, date, tier)
-        
-        return {
-            "status": "success",
-            "data": predictions,
-            "metadata": {
-                "sport": sport.value,
-                "date": date,
-                "tier": tier.value if tier else None,
-                "generated_at": predictions.get("analysis", {}).get("timestamp")
-            }
-        }
-        
+        result = halftime_prediction(game_id, player_id, halftime_prop_line)
+        return result
     except Exception as e:
-        logger.error(f"Error getting pregame predictions: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error getting pregame predictions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/predictions/halftime")
-async def trigger_halftime_predictions(
-    background_tasks: BackgroundTasks,
-    sport: SportType,
-    game_id: str = None,
-    tier: TierType = None
-):
-    """
-    Trigger halftime/live prediction script for a specific sport
-    
-    Args:
-        sport: Sport type (NFL, MLB, NBA, NHL)
-        game_id: Specific game ID (optional, analyzes all live games if not provided)
-        tier: Tier level for filtering parlays (optional)
-    
-    Returns:
-        Confirmation message and prediction results
-    """
+@app.get("/liveprops/{game_id}")
+def liveprops_route(game_id: int):
+    """Get live player stats for a game"""
     try:
-        logger.info(f"Triggering halftime predictions for {sport.value}, game: {game_id}")
-        
-        # Run prediction in background to avoid timeout
-        background_tasks.add_task(
-            _run_halftime_prediction_task, 
-            sport, 
-            game_id, 
-            tier
-        )
-        
-        return {
-            "message": f"Halftime prediction script triggered for {sport.value}",
-            "sport": sport.value,
-            "game_id": game_id,
-            "tier": tier.value if tier else None,
-            "status": "processing"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error triggering halftime predictions: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error triggering halftime predictions: {str(e)}")
-
-@app.get("/predictions/halftime/{sport}")
-async def get_halftime_predictions(
-    sport: SportType,
-    game_id: str = None,
-    tier: TierType = None
-):
-    """
-    Get halftime/live predictions for a specific sport
-    
-    Args:
-        sport: Sport type (NFL, MLB, NBA, NHL)
-        game_id: Specific game ID (optional, analyzes all live games if not provided)
-        tier: Tier level for filtering parlays (optional)
-    
-    Returns:
-        Halftime/live predictions and analysis
-    """
-    try:
-        logger.info(f"Getting halftime predictions for {sport.value}, game: {game_id}")
-        
-        predictions = await halftime_service.generate_halftime_predictions(sport, game_id, tier)
-        
-        return {
-            "status": "success",
-            "data": predictions,
-            "metadata": {
-                "sport": sport.value,
-                "game_id": game_id,
-                "tier": tier.value if tier else None,
-                "generated_at": predictions.get("analysis", {}).get("timestamp")
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting halftime predictions: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error getting halftime predictions: {str(e)}")
-
-@app.get("/predictions/status")
-async def get_prediction_status():
-    """
-    Get status of prediction services
-    
-    Returns:
-        Status of pregame and halftime prediction services
-    """
-    try:
-        sportsdata_api_key = os.getenv("SPORTSDATA_API_KEY")
-        
-        status = {
-            "pregame_service": "initialized" if pregame_service else "not_initialized",
-            "halftime_service": "initialized" if halftime_service else "not_initialized",
-            "sportsdata_api_configured": bool(sportsdata_api_key),
-            "api_key_partial": f"{sportsdata_api_key[:8]}..." if sportsdata_api_key else None,
-            "supported_sports": [sport.value for sport in SportType],
-            "supported_tiers": [tier.value for tier in TierType],
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        return status
-        
-    except Exception as e:
-        logger.error(f"Error getting prediction status: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error getting prediction status: {str(e)}")
-
-async def _run_pregame_prediction_task(sport: SportType, date: str, tier: TierType):
-    """Background task for running pregame predictions"""
-    try:
-        logger.info(f"Running pregame prediction task for {sport.value} on {date}")
-        predictions = await pregame_service.generate_pregame_predictions(sport, date, tier)
-        logger.info(f"Completed pregame prediction task for {sport.value}")
-        return predictions
-    except Exception as e:
-        logger.error(f"Error in pregame prediction task: {str(e)}")
-
-async def _run_halftime_prediction_task(sport: SportType, game_id: str, tier: TierType):
-    """Background task for running halftime predictions"""
-    try:
-        logger.info(f"Running halftime prediction task for {sport.value}, game: {game_id}")
-        predictions = await halftime_service.generate_halftime_predictions(sport, game_id, tier)
-        logger.info(f"Completed halftime prediction task for {sport.value}")
-        return predictions
-    except Exception as e:
-        logger.error(f"Error in halftime prediction task: {str(e)}")
-
-@app.get("/parlays", response_model=List[ParlayResponse])
-async def get_parlays(
-    sport: SportType = SportType.NFL,
-    tier: TierType = None,
-    refresh: bool = False
-):
-    """
-    Get parlays for a specific sport and tier
-    
-    Args:
-        sport: Sport type (MLB or NFL)
-        tier: Optional tier filter (Free, Premium, GOAT)
-        refresh: Force refresh of data
-    
-    Returns:
-        List of parlays matching the criteria
-    """
-    try:
-        if refresh:
-            logger.info(f"Force refreshing parlays for {sport.value}")
-            await parlay_service.refresh_parlays(sport)
-        
-        parlays = await parlay_service.get_parlays(sport, tier)
-        logger.info(f"Retrieved {len(parlays)} parlays for {sport.value}")
-        return parlays
-        
-    except Exception as e:
-        logger.error(f"Error retrieving parlays: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error retrieving parlays: {str(e)}")
-
-@app.post("/parlays/refresh")
-async def refresh_parlays(background_tasks: BackgroundTasks, sport: SportType = None):
-    """
-    Manually trigger parlay refresh
-    
-    Args:
-        sport: Optional sport to refresh (if not provided, refreshes all)
-    """
-    try:
-        if sport:
-            background_tasks.add_task(parlay_service.refresh_parlays, sport)
-            message = f"Refresh triggered for {sport.value}"
-        else:
-            background_tasks.add_task(parlay_service.refresh_all_parlays)
-            message = "Refresh triggered for all sports"
-        
-        logger.info(message)
-        return {"message": message}
-        
-    except Exception as e:
-        logger.error(f"Error triggering refresh: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error triggering refresh: {str(e)}")
-
-@app.get("/props/{sport}")
-async def get_player_props(sport: SportType, date: str = None):
-    """
-    Get real-time player props for a sport
-    
-    Args:
-        sport: Sport type (MLB or NFL)
-        date: Optional date (YYYY-MM-DD format)
-    
-    Returns:
-        Raw player props data
-    """
-    try:
-        props = await parlay_service.get_player_props(sport, date)
-        return {"sport": sport.value, "date": date, "props": props}
-        
-    except Exception as e:
-        logger.error(f"Error retrieving props: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error retrieving props: {str(e)}")
-
-@app.get("/parlays/live", response_model=List[ParlayResponse])
-async def get_live_parlays(sport: SportType, tier: TierType = None):
-    """
-    Get live/halftime parlays for in-game betting
-    
-    Args:
-        sport: Sport type (mlb, nfl, nba, nhl)
-        tier: Optional tier filter (conservative, goat)
-        
-    Returns:
-        List of live parlay recommendations
-    """
-    try:
-        logger.info(f"Generating live parlays for {sport.value}")
-        
-        # Fetch live props from OddsJam
-        live_props = await parlay_service.oddsjam_service.fetch_live_props(sport)
-        
-        if not live_props:
-            logger.warning(f"No live props available for {sport.value}")
-            return []
-        
-        # Generate parlays from live props using the parlay builder
-        parlays = await parlay_service.parlay_builder.build_parlays(live_props, tier)
-        
-        logger.info(f"Generated {len(parlays)} live parlays for {sport.value}")
-        
-        # Convert to the same format as regular parlays
-        parlay_responses = []
-        for parlay in parlays:
-            parlay_responses.append(ParlayResponse(
-                parlay=parlay,
-                tier_requirements={"min_confidence": 80.0, "is_live": True},
-                analysis={"source": "oddsjam_live", "market_type": "live/halftime"}
-            ))
-        
-        return parlay_responses
-        
-    except Exception as e:
-        logger.error(f"Error generating live parlays: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error generating live parlays: {str(e)}")
-
-@app.get("/stats")
-async def get_stats():
-    """Get system statistics"""
-    try:
-        stats = await parlay_service.get_system_stats()
+        sds = SportsDataService()
+        stats = sds.get_live_player_stats(game_id)
         return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/schedule")
+def schedule_route(season: str = "2025REG"):
+    """Get NFL schedule"""
+    try:
+        sds = SportsDataService()
+        schedule = sds.get_nfl_schedule(season)
+        return schedule
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/player-stats/{player_id}")
+def player_stats_route(player_id: int, season: str = "2025REG"):
+    """Get player game stats"""
+    try:
+        sds = SportsDataService()
+        stats = sds.get_player_game_stats(player_id, season)
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/props/types")
+def get_prop_types_route():
+    """Get available prop types that map to FanDuel"""
+    try:
+        sds = SportsDataService()
+        prop_types = sds.get_available_prop_types()
+        return {"prop_types": prop_types}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/props/{game_id}")
+def props_route(game_id: int):
+    """Get player props for a game"""
+    try:
+        sds = SportsDataService()
+        props = sds.get_player_props_by_game(game_id)
+        return props
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/players/search")
+def search_players_route(name: str):
+    """Search for players by name"""
+    try:
+        sds = SportsDataService()
+        players = sds.search_players(name)
+        return {"players": players}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/players/game/{game_id}")
+def get_game_players_route(game_id: int):
+    """Get all players from both teams in a specific game"""
+    try:
+        sds = SportsDataService()
+        players = sds.get_game_players(str(game_id))
+        return {"players": players}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/odds/week/{week}")
+def get_week_odds_route(week: int, season: str = "2025REG"):
+    """Get betting odds for a specific week"""
+    try:
+        sds = SportsDataService()
+        odds = sds.get_game_odds(season)
+        return {"odds": odds}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/odds/game/{game_id}")
+def get_game_odds_route(game_id: int):
+    """Get betting odds for a specific game"""
+    try:
+        sds = SportsDataService()
+        odds = sds.get_pregame_odds(game_id)
+        return {"odds": odds}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/odds/live/{game_id}")
+def get_live_odds_route(game_id: int):
+    """Get live betting odds for a specific game"""
+    try:
+        sds = SportsDataService()
+        odds = sds.get_live_odds(game_id)
+        return {"odds": odds}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/odds/sportsbooks")
+def get_sportsbook_odds_route(season: str = "2025REG"):
+    """Get odds from multiple sportsbooks"""
+    try:
+        sds = SportsDataService()
+        odds = sds.get_sportsbook_odds(season)
+        return {"odds": odds}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/betting/trends/{team}")
+def get_betting_trends_route(team: str):
+    """Get betting trends for a team"""
+    try:
+        sds = SportsDataService()
+        trends = sds.get_betting_trends(team)
+        return {"trends": trends}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/predictions/win/{game_id}")
+def predict_game_winner_route(game_id: str):
+    """Predict game winner based on betting odds and historical data"""
+    try:
+        sds = SportsDataService()
+        
+        # Get game info
+        schedule = sds.get_nfl_schedule()
+        game = next((g for g in schedule if g['GameKey'] == game_id), None)
+        
+        if not game:
+            raise HTTPException(status_code=404, detail="Game not found")
+        
+        # Try to get betting odds
+        try:
+            odds = sds.get_pregame_odds(game_id)
+        except:
+            odds = None
+        
+        # Basic prediction logic using point spread from schedule
+        home_team = game['HomeTeam']
+        away_team = game['AwayTeam']
+        point_spread = game.get('PointSpread', 0)
+        over_under = game.get('OverUnder', 0)
+        home_ml = game.get('HomeTeamMoneyLine', 0)
+        away_ml = game.get('AwayTeamMoneyLine', 0)
+        
+        # Predict based on point spread (negative means home team favored)
+        if point_spread < 0:
+            predicted_winner = home_team
+            confidence = min(95, abs(point_spread) * 5 + 50)  # Higher spread = higher confidence
+            spread_analysis = f"Home team favored by {abs(point_spread)} points"
+        elif point_spread > 0:
+            predicted_winner = away_team
+            confidence = min(95, abs(point_spread) * 5 + 50)
+            spread_analysis = f"Away team favored by {abs(point_spread)} points"
+        else:
+            predicted_winner = home_team  # Home field advantage
+            confidence = 55
+            spread_analysis = "Even game, home field advantage"
+        
+        # Money line analysis
+        if home_ml < 0:
+            ml_favorite = home_team
+            ml_analysis = f"Home team favored (ML: {home_ml})"
+        elif away_ml < 0:
+            ml_favorite = away_team
+            ml_analysis = f"Away team favored (ML: {away_ml})"
+        else:
+            ml_favorite = "Even"
+            ml_analysis = "Close money line odds"
+        
+        return {
+            "game_id": game_id,
+            "home_team": home_team,
+            "away_team": away_team,
+            "predicted_winner": predicted_winner,
+            "confidence": round(confidence, 1),
+            "point_spread": point_spread,
+            "over_under": over_under,
+            "home_money_line": home_ml,
+            "away_money_line": away_ml,
+            "spread_analysis": spread_analysis,
+            "money_line_analysis": ml_analysis,
+            "betting_recommendation": {
+                "spread_pick": f"Take {predicted_winner} {'+' if point_spread > 0 else ''}{point_spread}",
+                "money_line_pick": f"Take {predicted_winner} ML",
+                "total_pick": f"Game total: {over_under} (analysis needed)"
+            },
+            "live_odds": odds if odds else "No live odds available yet"
+        }
         
     except Exception as e:
-        logger.error(f"Error retrieving stats: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error retrieving stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")

@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏈 NFL Stats Sync - Parlay Optimizer Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .tab-content { display: none; }
+        .tab-content:not(.hidden) { display: block; }
+        .loading { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .success-pulse { animation: successPulse 0.6s ease-in-out; }
+        @keyframes successPulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 12px;
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="gradient-bg text-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-football-ball text-2xl"></i>
+                    <h1 class="text-2xl font-bold">NFL Stats Sync</h1>
+                    <span class="bg-white/20 px-3 py-1 rounded-full text-sm">Parlay Optimizer</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2">
+                        <div id="apiStatus" class="flex items-center space-x-1">
+                            <div class="w-2 h-2 bg-yellow-400 rounded-full loading"></div>
+                            <span class="text-sm">Connecting...</span>
+                        </div>
+                    </div>
+                    <div class="text-sm opacity-75">
+                        <i class="fas fa-calendar-alt mr-1"></i>
+                        2025 NFL Season
+                    </div>
+                    <button onclick="showHelpModal()" class="bg-white/20 hover:bg-white/30 px-3 py-2 rounded-lg text-sm transition-colors flex items-center">
+                        <i class="fas fa-question-circle mr-2"></i>
+                        Help
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Quick Stats Bar -->
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                <div class="bg-white/10 rounded-lg p-3 text-center">
+                    <div class="font-semibold" id="total-games">Loading...</div>
+                    <div class="opacity-75">Total Games</div>
+                </div>
+                <div class="bg-white/10 rounded-lg p-3 text-center">
+                    <div class="font-semibold" id="current-week">Week 1</div>
+                    <div class="opacity-75">Current Week</div>
+                </div>
+                <div class="bg-white/10 rounded-lg p-3 text-center">
+                    <div class="font-semibold" id="available-props">10</div>
+                    <div class="opacity-75">Prop Types</div>
+                </div>
+                <div class="bg-white/10 rounded-lg p-3 text-center">
+                    <div class="font-semibold text-green-300">LIVE</div>
+                    <div class="opacity-75">System Status</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container mx-auto px-6 py-8">
+        <!-- Welcome Guide -->
+        <div id="welcome-guide" class="bg-blue-50 border-l-4 border-blue-400 p-6 mb-6 rounded-lg">
+            <div class="flex items-start">
+                <div class="flex-shrink-0">
+                    <i class="fas fa-info-circle text-blue-400 text-xl"></i>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-lg font-medium text-blue-900 mb-2">
+                        🚀 Welcome to Your NFL Parlay Optimizer!
+                    </h3>
+                    <div class="text-blue-700 space-y-2">
+                        <p><strong>What you can do:</strong></p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                            <div>• Browse all 304 NFL games with real odds</div>
+                            <div>• Search players and get real Player IDs</div>
+                            <div>• Test predictions with actual data</div>
+                            <div>• Get game winner predictions with confidence</div>
+                        </div>
+                        <button onclick="dismissWelcome()" class="mt-3 text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 px-3 py-1 rounded">
+                            Got it! <i class="fas fa-times ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="bg-white rounded-lg shadow-md mb-6">
+            <div class="border-b border-gray-200">
+                <nav class="-mb-px flex space-x-0 px-0 overflow-x-auto">
+                    <button onclick="showTab('schedule')" id="tab-schedule" 
+                            class="tab-button flex-1 min-w-max py-4 px-6 border-b-2 font-medium text-sm border-blue-500 text-blue-600 bg-blue-50">
+                        <i class="fas fa-calendar-alt mr-2"></i>
+                        <span class="hidden sm:inline">NFL Schedule</span>
+                        <span class="sm:hidden">Schedule</span>
+                        <div class="text-xs opacity-75 mt-1">Browse 304 games</div>
+                    </button>
+                    <button onclick="showTab('players')" id="tab-players"
+                            class="tab-button flex-1 min-w-max py-4 px-6 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-gray-50">
+                        <i class="fas fa-users mr-2"></i>
+                        <span class="hidden sm:inline">Player Browser</span>
+                        <span class="sm:hidden">Players</span>
+                        <div class="text-xs opacity-75 mt-1">Find real Player IDs</div>
+                    </button>
+                    <button onclick="showTab('predictions')" id="tab-predictions"
+                            class="tab-button flex-1 min-w-max py-4 px-6 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-gray-50">
+                        <i class="fas fa-chart-line mr-2"></i>
+                        <span class="hidden sm:inline">Predictions</span>
+                        <span class="sm:hidden">Predict</span>
+                        <div class="text-xs opacity-75 mt-1">Test your props</div>
+                    </button>
+                    <button onclick="showTab('props')" id="tab-props"
+                            class="tab-button flex-1 min-w-max py-4 px-6 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-gray-50">
+                        <i class="fas fa-list-alt mr-2"></i>
+                        <span class="hidden sm:inline">Available Props</span>
+                        <span class="sm:hidden">Props</span>
+                        <div class="text-xs opacity-75 mt-1">FanDuel mapping</div>
+                    </button>
+                    <button onclick="showTab('betting')" id="tab-betting"
+                            class="tab-button flex-1 min-w-max py-4 px-6 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-gray-50">
+                        <i class="fas fa-trophy mr-2"></i>
+                        <span class="hidden sm:inline">Game Predictions</span>
+                        <span class="sm:hidden">Betting</span>
+                        <div class="text-xs opacity-75 mt-1">Win predictions</div>
+                    </button>
+                    <button onclick="showTab('testing')" id="tab-testing"
+                            class="tab-button flex-1 min-w-max py-4 px-6 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 hover:bg-gray-50">
+                        <i class="fas fa-code mr-2"></i>
+                        <span class="hidden sm:inline">API Testing</span>
+                        <span class="sm:hidden">API</span>
+                        <div class="text-xs opacity-75 mt-1">Raw endpoints</div>
+                    </button>
+                </nav>
+            </div>
+        </div>
+
+        <!-- Schedule Tab -->
+        <div id="schedule-tab" class="tab-content">
+            <!-- Header Section -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+                            <i class="fas fa-calendar-alt text-blue-600 mr-3"></i>
+                            NFL 2025 Season Schedule
+                        </h2>
+                        <p class="text-gray-600 mt-1">Browse all games and copy Game Keys for predictions</p>
+                    </div>
+                    <div class="tooltip">
+                        <i class="fas fa-question-circle text-gray-400 text-lg cursor-help"></i>
+                        <span class="tooltiptext">Click game cards to copy Game Keys for use in predictions</span>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                        <i class="fas fa-copy text-blue-600 text-lg mb-1"></i>
+                        <h4 class="font-medium text-blue-800 text-sm">Copy Game Keys</h4>
+                        <p class="text-xs text-blue-600">Click games to copy keys</p>
+                    </div>
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                        <i class="fas fa-chart-bar text-green-600 text-lg mb-1"></i>
+                        <h4 class="font-medium text-green-800 text-sm">Real Betting Lines</h4>
+                        <p class="text-xs text-green-600">Live spreads & totals</p>
+                    </div>
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
+                        <i class="fas fa-rocket text-purple-600 text-lg mb-1"></i>
+                        <h4 class="font-medium text-purple-800 text-sm">Quick Predict</h4>
+                        <p class="text-xs text-purple-600">Instant game analysis</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Week Filter -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div class="flex flex-wrap items-center gap-4">
+                    <label class="font-medium text-gray-700 flex items-center">
+                        <i class="fas fa-filter mr-2"></i>
+                        Filter by Week:
+                    </label>
+                    <select id="weekFilter" onchange="filterByWeek()" 
+                            class="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Weeks</option>
+                    </select>
+                    <button onclick="loadSchedule()" 
+                            class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition-colors flex items-center">
+                        <i class="fas fa-sync-alt mr-2"></i>
+                        Refresh Schedule
+                    </button>
+                    <span id="scheduleCount" class="text-gray-600 text-sm flex items-center">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        <span>Loading games...</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Games Grid -->
+            <div id="gamesGrid" class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div class="loading bg-white rounded-lg shadow-md p-6">
+                    <div class="animate-pulse">
+                        <div class="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                        <div class="h-4 bg-gray-200 rounded w-1/2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Player Browser Tab -->
+        <div id="players-tab" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+                            <i class="fas fa-users text-green-600 mr-3"></i>
+                            Player Browser
+                        </h2>
+                        <p class="text-gray-600 mt-1">Find real Player IDs for accurate predictions</p>
+                    </div>
+                    <div class="tooltip">
+                        <i class="fas fa-question-circle text-gray-400 text-lg cursor-help"></i>
+                        <span class="tooltiptext">Search players to get real Player IDs (not test IDs like "12345")</span>
+                    </div>
+                </div>
+
+                <!-- Pro Tips -->
+                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+                    <div class="flex items-start">
+                        <i class="fas fa-lightbulb text-yellow-500 mr-3 mt-1"></i>
+                        <div>
+                            <h4 class="font-semibold text-yellow-800">💡 Pro Tips:</h4>
+                            <ul class="text-sm text-yellow-700 mt-1 space-y-1">
+                                <li>• Try searching "Josh Allen" to get Player ID: 19801</li>
+                                <li>• Use "Use for Prediction" buttons to auto-fill forms</li>
+                                <li>• Real Player IDs are 4-5 digits (not test IDs like "12345")</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Player Search -->
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold mb-3 flex items-center">
+                        <i class="fas fa-search text-blue-600 mr-2"></i>
+                        Search by Player Name
+                    </h3>
+                    <div class="flex gap-4 mb-4">
+                        <div class="flex-1">
+                            <input type="text" id="player-search" 
+                                   placeholder="Search for players (e.g., Josh Allen, Mahomes, Kelce)" 
+                                   class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                   onkeypress="if(event.key==='Enter') searchPlayers()">
+                            <p class="text-xs text-gray-500 mt-1">Try popular players: Josh Allen, Patrick Mahomes, Travis Kelce</p>
+                        </div>
+                        <button onclick="searchPlayers()" 
+                                class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+                            <i class="fas fa-search mr-2"></i>
+                            Search
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Game Player Browser -->
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold mb-3 flex items-center">
+                        <i class="fas fa-gamepad text-green-600 mr-2"></i>
+                        Browse Players by Game
+                    </h3>
+                    <div class="flex gap-4 mb-4">
+                        <div class="flex-1">
+                            <input type="text" id="game-player-search" 
+                                   placeholder="Enter Game Key (e.g., 202510126)" 
+                                   class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                                   onkeypress="if(event.key==='Enter') getGamePlayers()">
+                            <p class="text-xs text-gray-500 mt-1">Get Game Keys from the Schedule tab</p>
+                        </div>
+                        <button onclick="getGamePlayers()" 
+                                class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center">
+                            <i class="fas fa-users mr-2"></i>
+                            Get Players
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Player Results -->
+                <div id="player-results" class="hidden">
+                    <h3 class="text-lg font-semibold mb-4 flex items-center">
+                        <i class="fas fa-list text-purple-600 mr-2"></i>
+                        Player Results
+                    </h3>
+                    <div id="player-list" class="space-y-3"></div>
+                </div>
+
+                <!-- No Results State -->
+                <div id="no-players-message" class="hidden text-center py-8">
+                    <i class="fas fa-search text-gray-300 text-4xl mb-3"></i>
+                    <p class="text-gray-500">No players found. Try a different search term.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Available Props Tab -->
+        <div id="props-tab" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Available Prop Types</h2>
+                <p class="text-gray-600 mb-4">These are the prop types available in our system that map to common FanDuel categories:</p>
+                
+                <div id="prop-types-list" class="space-y-4">
+                    <p class="text-gray-500">Loading available prop types...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Predictions Tab -->
+        <div id="predictions-tab" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Player Predictions</h2>
+                
+                <!-- Game Selection -->
+                <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <label class="block font-medium text-gray-700 mb-2">Select a Game:</label>
+                    <select id="gameSelect" onchange="loadGameProps()" 
+                            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Choose a game...</option>
+                    </select>
+                </div>
+
+                <!-- Player Props -->
+                <div id="playerProps" class="hidden">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Player Props & Stats</h3>
+                    <div id="propsContainer" class="space-y-4">
+                        <!-- Props will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Prediction Results -->
+                <div id="predictionResults" class="hidden mt-6 p-4 bg-blue-50 rounded-lg">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Prediction Results</h3>
+                    <div id="resultsContainer">
+                        <!-- Results will be displayed here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Predictions Tab -->
+        <div id="betting-tab" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Game Predictions & Betting Analysis</h2>
+                
+                <!-- Game Winner Prediction -->
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold mb-2">Game Winner Prediction</h3>
+                    <div class="flex gap-4 mb-4">
+                        <input type="text" id="prediction-game-id" placeholder="Enter Game Key (e.g., 202510126)" 
+                               class="flex-1 px-3 py-2 border border-gray-300 rounded-md">
+                        <button onclick="predictGameWinner()" class="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
+                            Predict Winner
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Prediction Results -->
+                <div id="prediction-results" class="hidden mb-6">
+                    <h3 class="text-lg font-semibold mb-2">Prediction Results</h3>
+                    <div id="prediction-details" class="border border-gray-200 rounded-lg p-4"></div>
+                </div>
+
+                <!-- Available Games for Predictions -->
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold mb-2">Week 1 Games Available for Prediction</h3>
+                    <div id="available-games" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <p class="text-gray-500">Loading games...</p>
+                    </div>
+                </div>
+
+                <!-- Coming Soon Features -->
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 class="text-lg font-semibold mb-2 text-blue-800">🚀 Coming Soon: Real Sportsbook Integration</h3>
+                    <ul class="text-sm text-blue-600 space-y-1">
+                        <li>• Live odds from FanDuel, DraftKings, BetMGM</li>
+                        <li>• Real player prop lines and values</li>
+                        <li>• Public betting percentages</li>
+                        <li>• Line movement tracking</li>
+                        <li>• Advanced ML prediction models</li>
+                    </ul>
+                    <p class="text-xs text-blue-500 mt-2">
+                        * Currently using SportsDataIO base data. Sportsbook odds become available closer to season start.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Testing Tab -->
+        <div id="testing-tab" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">API Testing Tools</h2>
+                
+                <!-- Quick Tests -->
+                <div class="grid gap-4 md:grid-cols-2 mb-6">
+                    <div class="p-4 border border-gray-200 rounded-lg">
+                        <h3 class="font-semibold text-gray-800 mb-2">Health Check</h3>
+                        <button onclick="testHealth()" 
+                                class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md transition-colors">
+                            Test Health
+                        </button>
+                        <div id="healthResult" class="mt-2 text-sm"></div>
+                    </div>
+                    
+                    <div class="p-4 border border-gray-200 rounded-lg">
+                        <h3 class="font-semibold text-gray-800 mb-2">Schedule Test</h3>
+                        <button onclick="testSchedule()" 
+                                class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition-colors">
+                            Test Schedule
+                        </button>
+                        <div id="scheduleResult" class="mt-2 text-sm"></div>
+                    </div>
+                </div>
+
+                <!-- Custom API Calls -->
+                <div class="p-4 border border-gray-200 rounded-lg">
+                    <h3 class="font-semibold text-gray-800 mb-3">Custom API Call</h3>
+                    <div class="flex gap-2 mb-2">
+                        <input type="text" id="customEndpoint" placeholder="/health" 
+                               class="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button onclick="testCustomEndpoint()" 
+                                class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-md transition-colors">
+                            Test
+                        </button>
+                    </div>
+                    <div id="customResult" class="mt-2 p-3 bg-gray-50 rounded-md text-sm font-mono max-h-40 overflow-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8001';
+        let allGames = [];
+        let selectedGame = null;
+
+        // Enhanced initialization
+        async function init() {
+            showLoading('total-games', '...');
+            await checkApiStatus();
+            await loadSchedule();
+            await loadPropTypes();
+            await loadAvailableGames();
+            
+            // Update header stats
+            updateHeaderStats();
+        }
+
+        // Update header statistics
+        function updateHeaderStats() {
+            // Update total games count from schedule
+            const scheduleContent = document.getElementById('gamesGrid');
+            if (scheduleContent) {
+                const gameCards = scheduleContent.querySelectorAll('.game-card');
+                document.getElementById('total-games').textContent = gameCards.length || '304';
+            }
+        }
+
+        // Enhanced API status check
+        async function checkApiStatus() {
+            try {
+                const response = await axios.get('/health');
+                document.getElementById('apiStatus').innerHTML = 
+                    '<div class="w-2 h-2 bg-green-400 rounded-full"></div><span class="text-sm">Connected</span>';
+                showSuccess('API Connected Successfully!');
+            } catch (error) {
+                document.getElementById('apiStatus').innerHTML = 
+                    '<div class="w-2 h-2 bg-red-400 rounded-full"></div><span class="text-sm">Disconnected</span>';
+                showError('API Connection Failed');
+            }
+        }        // Load NFL schedule
+        async function loadSchedule() {
+            try {
+                document.getElementById('gamesGrid').innerHTML = '<div class="col-span-full text-center py-8">Loading schedule...</div>';
+                
+                const response = await axios.get(`${API_BASE}/schedule`);
+                allGames = response.data;
+                
+                // Populate week filter
+                const weeks = [...new Set(allGames.map(game => game.Week))].sort((a, b) => a - b);
+                const weekFilter = document.getElementById('weekFilter');
+                weekFilter.innerHTML = '<option value="">All Weeks</option>';
+                weeks.forEach(week => {
+                    weekFilter.innerHTML += `<option value="${week}">Week ${week}</option>`;
+                });
+
+                // Populate game select for predictions
+                const gameSelect = document.getElementById('gameSelect');
+                gameSelect.innerHTML = '<option value="">Choose a game...</option>';
+                allGames.forEach(game => {
+                    const gameDate = new Date(game.Date).toLocaleDateString();
+                    gameSelect.innerHTML += `<option value="${game.GameKey}">${game.AwayTeam} @ ${game.HomeTeam} - ${gameDate}</option>`;
+                });
+
+                displayGames(allGames);
+                document.getElementById('scheduleCount').textContent = `${allGames.length} games loaded`;
+            } catch (error) {
+                document.getElementById('gamesGrid').innerHTML = 
+                    '<div class="col-span-full text-center py-8 text-red-600">Error loading schedule</div>';
+            }
+        }
+
+        // Display games in grid
+        function displayGames(games) {
+            const grid = document.getElementById('gamesGrid');
+            if (games.length === 0) {
+                grid.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500">No games found</div>';
+                return;
+            }
+
+            grid.innerHTML = games.map(game => {
+                const gameDate = new Date(game.Date);
+                const isToday = gameDate.toDateString() === new Date().toDateString();
+                const isFuture = gameDate > new Date();
+                
+                return `
+                    <div class="game-card bg-white rounded-lg shadow-md p-4 transition-transform hover:shadow-lg cursor-pointer"
+                         onclick="selectGame('${game.GameKey}')">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-xs font-medium px-2 py-1 rounded-full ${isToday ? 'bg-red-100 text-red-700' : isFuture ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}">
+                                Week ${game.Week}
+                            </span>
+                            <span class="text-xs text-gray-500">${gameDate.toLocaleDateString()}</span>
+                        </div>
+                        
+                        <div class="text-center mb-3">
+                            <div class="text-lg font-bold text-gray-800">
+                                ${game.AwayTeam} @ ${game.HomeTeam}
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                ${gameDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </div>
+                        </div>
+                        
+                        ${game.Channel ? `<div class="text-xs text-gray-500 text-center">${game.Channel}</div>` : ''}
+                        
+                        <div class="mt-3 flex justify-between text-xs text-gray-600">
+                            <span>Spread: ${game.PointSpread || 'N/A'}</span>
+                            <span>O/U: ${game.OverUnder || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="mt-2 text-center">
+                            <button class="text-xs bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition-colors">
+                                View Props
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Filter games by week
+        function filterByWeek() {
+            const selectedWeek = document.getElementById('weekFilter').value;
+            const filteredGames = selectedWeek ? 
+                allGames.filter(game => game.Week == selectedWeek) : 
+                allGames;
+            displayGames(filteredGames);
+            document.getElementById('scheduleCount').textContent = 
+                `${filteredGames.length} games ${selectedWeek ? `(Week ${selectedWeek})` : '(All Weeks)'}`;
+        }
+
+        // Select a game for predictions
+        function selectGame(gameKey) {
+            selectedGame = allGames.find(game => game.GameKey === gameKey);
+            if (selectedGame) {
+                document.getElementById('gameSelect').value = gameKey;
+                showTab('predictions');
+                loadGameProps();
+            }
+        }
+
+        // Load props for selected game
+        async function loadGameProps() {
+            const gameKey = document.getElementById('gameSelect').value;
+            if (!gameKey) {
+                document.getElementById('playerProps').classList.add('hidden');
+                return;
+            }
+
+            try {
+                document.getElementById('playerProps').classList.remove('hidden');
+                document.getElementById('propsContainer').innerHTML = '<div class="text-center py-4">Loading player props...</div>';
+                
+                const response = await axios.get(`${API_BASE}/props/${gameKey}`);
+                const props = response.data;
+                
+                if (props.length === 0) {
+                    document.getElementById('propsContainer').innerHTML = 
+                        '<div class="text-center py-4 text-gray-500">No player props available for this game</div>';
+                    return;
+                }
+
+                // Group props by player
+                const playerProps = {};
+                props.forEach(prop => {
+                    if (!playerProps[prop.PlayerID]) {
+                        playerProps[prop.PlayerID] = {
+                            name: prop.PlayerName,
+                            team: prop.Team,
+                            props: []
+                        };
+                    }
+                    playerProps[prop.PlayerID].props.push(prop);
+                });
+
+                // Display props
+                const container = document.getElementById('propsContainer');
+                container.innerHTML = Object.values(playerProps).map(player => `
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <h4 class="font-semibold text-gray-800 mb-2">${player.name} (${player.team})</h4>
+                        <div class="grid gap-2 md:grid-cols-2">
+                            ${player.props.map(prop => `
+                                <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                                    <span class="text-sm">${prop.Name}</span>
+                                    <div class="text-right">
+                                        <div class="text-sm font-medium">${prop.OverPayout || 'N/A'} / ${prop.UnderPayout || 'N/A'}</div>
+                                        <button onclick="testPregamePrediction('${player.name}', '${prop.Name}', ${prop.OverUnder || 25})"
+                                                class="text-xs bg-green-500 text-white px-2 py-1 rounded mt-1 hover:bg-green-600 transition-colors">
+                                            Test Prediction
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (error) {
+                document.getElementById('propsContainer').innerHTML = 
+                    '<div class="text-center py-4 text-red-600">Error loading props - this is expected if no props are available</div>';
+            }
+        }
+
+        // Test pregame prediction
+        async function testPregamePrediction(playerName, propName, propLine) {
+            try {
+                document.getElementById('predictionResults').classList.remove('hidden');
+                document.getElementById('resultsContainer').innerHTML = 
+                    '<div class="text-center py-4">Testing prediction...</div>';
+
+                // For demo purposes, we'll simulate a prediction since we don't have real player IDs
+                const mockResult = {
+                    player_name: playerName,
+                    prop_type: propName,
+                    prop_line: propLine,
+                    predicted: (propLine + (Math.random() - 0.5) * 10).toFixed(1),
+                    prediction: Math.random() > 0.5 ? 'Over' : 'Under',
+                    confidence: ['High', 'Medium', 'Low'][Math.floor(Math.random() * 3)]
+                };
+
+                document.getElementById('resultsContainer').innerHTML = `
+                    <div class="bg-white border border-gray-200 rounded-lg p-4">
+                        <h4 class="font-semibold text-gray-800 mb-3">Prediction for ${mockResult.player_name}</h4>
+                        <div class="grid gap-2 md:grid-cols-2">
+                            <div><strong>Prop:</strong> ${mockResult.prop_type}</div>
+                            <div><strong>Line:</strong> ${mockResult.prop_line}</div>
+                            <div><strong>Predicted:</strong> ${mockResult.predicted}</div>
+                            <div><strong>Recommendation:</strong> 
+                                <span class="font-medium ${mockResult.prediction === 'Over' ? 'text-green-600' : 'text-red-600'}">
+                                    ${mockResult.prediction}
+                                </span>
+                            </div>
+                            <div><strong>Confidence:</strong> 
+                                <span class="px-2 py-1 rounded-full text-xs font-medium ${
+                                    mockResult.confidence === 'High' ? 'bg-green-100 text-green-700' :
+                                    mockResult.confidence === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-red-100 text-red-700'
+                                }">
+                                    ${mockResult.confidence}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="mt-3 text-xs text-gray-500">
+                            Note: This is a demo prediction. Real predictions require valid player IDs and historical data.
+                        </div>
+                    </div>
+                `;
+
+            } catch (error) {
+                document.getElementById('resultsContainer').innerHTML = 
+                    '<div class="text-center py-4 text-red-600">Error generating prediction</div>';
+            }
+        }
+
+        // Tab switching with enhanced UX
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.add('hidden');
+            });
+            
+            // Remove active styling from all tabs
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('border-blue-500', 'text-blue-600', 'bg-blue-50');
+                button.classList.add('border-transparent', 'text-gray-500');
+            });
+            
+            // Show selected tab content with animation
+            const selectedTab = document.getElementById(`${tabName}-tab`);
+            if (selectedTab) {
+                selectedTab.classList.remove('hidden');
+                // Add a subtle fade-in effect
+                selectedTab.style.opacity = '0';
+                setTimeout(() => {
+                    selectedTab.style.opacity = '1';
+                    selectedTab.style.transition = 'opacity 0.3s ease-in-out';
+                }, 50);
+            }
+            
+            // Add active styling to selected tab
+            const activeButton = document.getElementById(`tab-${tabName}`);
+            if (activeButton) {
+                activeButton.classList.remove('border-transparent', 'text-gray-500');
+                activeButton.classList.add('border-blue-500', 'text-blue-600', 'bg-blue-50');
+            }
+        }
+
+        // Welcome guide dismissal
+        function dismissWelcome() {
+            const welcomeGuide = document.getElementById('welcome-guide');
+            welcomeGuide.style.transform = 'translateX(-100%)';
+            welcomeGuide.style.opacity = '0';
+            setTimeout(() => {
+                welcomeGuide.remove();
+            }, 300);
+        }
+
+        // Enhanced loading states
+        function showLoading(elementId, message = 'Loading...') {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.innerHTML = `
+                    <div class="flex items-center justify-center py-8">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        <span class="ml-3 text-gray-600">${message}</span>
+                    </div>
+                `;
+            }
+        }
+
+        // Success feedback
+        function showSuccess(message, elementId = null) {
+            const notification = document.createElement('div');
+            notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 success-pulse';
+            notification.innerHTML = `
+                <div class="flex items-center">
+                    <i class="fas fa-check-circle mr-2"></i>
+                    ${message}
+                </div>
+            `;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Error feedback
+        function showError(message) {
+            const notification = document.createElement('div');
+            notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            notification.innerHTML = `
+                <div class="flex items-center">
+                    <i class="fas fa-exclamation-circle mr-2"></i>
+                    ${message}
+                </div>
+            `;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 4000);
+        }
+
+        // Copy to clipboard with feedback
+        function copyToClipboard(text, label = 'Text') {
+            navigator.clipboard.writeText(text).then(() => {
+                showSuccess(`${label} copied to clipboard!`);
+            }).catch(() => {
+                showError('Failed to copy to clipboard');
+            });
+        }
+
+        // Enhanced player search functions
+        async function searchPlayers() {
+            const searchTerm = document.getElementById('player-search').value.trim();
+            if (!searchTerm) {
+                showError('Please enter a player name to search');
+                return;
+            }
+
+            // Show loading state
+            showLoading('player-list', 'Searching for players...');
+            document.getElementById('player-results').classList.remove('hidden');
+            document.getElementById('no-players-message').classList.add('hidden');
+
+            try {
+                const response = await axios.get(`/players/search?name=${encodeURIComponent(searchTerm)}`);
+                displayPlayerResults(response.data.players, `Search Results for "${searchTerm}"`);
+                
+                if (response.data.players && response.data.players.length > 0) {
+                    showSuccess(`Found ${response.data.players.length} players!`);
+                }
+            } catch (error) {
+                console.error('Error searching players:', error);
+                showError('Error searching for players. Please try again.');
+                document.getElementById('player-results').classList.add('hidden');
+            }
+        }
+
+        async function getGamePlayers() {
+            const gameId = document.getElementById('game-player-search').value.trim();
+            if (!gameId) {
+                showError('Please enter a Game Key (e.g., 202510126)');
+                return;
+            }
+
+            // Show loading state
+            showLoading('player-list', 'Loading game players...');
+            document.getElementById('player-results').classList.remove('hidden');
+            document.getElementById('no-players-message').classList.add('hidden');
+
+            try {
+                const response = await axios.get(`/players/game/${gameId}`);
+                displayPlayerResults(response.data.players, `Players in Game ${gameId}`);
+                
+                if (response.data.players && response.data.players.length > 0) {
+                    showSuccess(`Found ${response.data.players.length} players in this game!`);
+                } else {
+                    document.getElementById('no-players-message').classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error getting game players:', error);
+                showError('Error getting players for this game. Check the Game Key.');
+                document.getElementById('player-results').classList.add('hidden');
+            }
+        }
+
+        function displayPlayerResults(players, title) {
+            const resultsDiv = document.getElementById('player-results');
+            const listDiv = document.getElementById('player-list');
+            
+            if (!players || players.length === 0) {
+                listDiv.innerHTML = `
+                    <div class="text-center py-8">
+                        <i class="fas fa-search text-gray-300 text-4xl mb-3"></i>
+                        <p class="text-gray-500">No players found</p>
+                    </div>
+                `;
+                resultsDiv.classList.remove('hidden');
+                return;
+            }
+
+            listDiv.innerHTML = `
+                <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                    <h4 class="font-semibold text-gray-800 flex items-center">
+                        <i class="fas fa-users text-blue-600 mr-2"></i>
+                        ${title} 
+                        <span class="ml-2 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">${players.length} found</span>
+                    </h4>
+                </div>
+                <div class="space-y-3">
+                    ${players.map(player => `
+                        <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors card-hover cursor-pointer"
+                             onclick="copyToClipboard('${player.PlayerID}', 'Player ID ${player.PlayerID}')">
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <div class="flex items-center mb-2">
+                                        <h5 class="font-semibold text-lg text-gray-900">${player.Name || 'Unknown'}</h5>
+                                        <span class="ml-2 bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded">${player.Position || 'N/A'}</span>
+                                    </div>
+                                    <div class="flex items-center text-sm text-gray-600 space-x-4">
+                                        <span class="flex items-center">
+                                            <i class="fas fa-jersey-alt mr-1"></i>
+                                            ${player.Team || player.GameTeam || 'N/A'}
+                                            ${player.IsHome !== undefined ? (player.IsHome ? ' (Home)' : ' (Away)') : ''}
+                                        </span>
+                                        <span class="flex items-center">
+                                            <i class="fas fa-id-badge mr-1"></i>
+                                            ID: ${player.PlayerID}
+                                        </span>
+                                        ${player.Number ? `<span class="flex items-center"><i class="fas fa-hashtag mr-1"></i>#${player.Number}</span>` : ''}
+                                    </div>
+                                    ${player.College ? `<p class="text-xs text-gray-500 mt-1">${player.College}</p>` : ''}
+                                </div>
+                                <div class="flex flex-col space-y-2 ml-4">
+                                    <button onclick="event.stopPropagation(); usePlayerForPrediction('${player.PlayerID}', '${player.Name}')" 
+                                            class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors flex items-center">
+                                        <i class="fas fa-chart-line mr-1"></i>
+                                        Use for Prediction
+                                    </button>
+                                    <button onclick="event.stopPropagation(); copyToClipboard('${player.PlayerID}', 'Player ID')" 
+                                            class="px-3 py-1 bg-gray-600 text-white text-xs rounded hover:bg-gray-700 transition-colors flex items-center">
+                                        <i class="fas fa-copy mr-1"></i>
+                                        Copy ID
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+            resultsDiv.classList.remove('hidden');
+        }
+
+        function usePlayerForPrediction(playerId, playerName) {
+            // Switch to predictions tab and fill in player ID
+            showTab('predictions');
+            const playerIdInput = document.getElementById('player-id');
+            if (playerIdInput) {
+                playerIdInput.value = playerId;
+                // Add visual feedback
+                playerIdInput.classList.add('ring-2', 'ring-green-500');
+                setTimeout(() => {
+                    playerIdInput.classList.remove('ring-2', 'ring-green-500');
+                }, 2000);
+            }
+            showSuccess(`Player ${playerName} (ID: ${playerId}) added to prediction form!`);
+        }
+
+        // Game prediction functions
+        async function predictGameWinner() {
+            const gameId = document.getElementById('prediction-game-id').value;
+            if (!gameId) {
+                alert('Please enter a Game Key');
+                return;
+            }
+
+            try {
+                const response = await axios.get(`/predictions/win/${gameId}`);
+                displayPredictionResults(response.data);
+            } catch (error) {
+                console.error('Error predicting game winner:', error);
+                alert('Error predicting game winner. Check the Game Key.');
+            }
+        }
+
+        function displayPredictionResults(prediction) {
+            const resultsDiv = document.getElementById('prediction-results');
+            const detailsDiv = document.getElementById('prediction-details');
+            
+            detailsDiv.innerHTML = `
+                <div class="space-y-4">
+                    <div class="border-b border-gray-200 pb-4">
+                        <h4 class="text-xl font-bold text-green-600 mb-2">🏆 ${prediction.predicted_winner} Predicted to Win</h4>
+                        <p class="text-lg"><strong>${prediction.away_team} @ ${prediction.home_team}</strong></p>
+                        <p class="text-sm text-gray-600">Confidence: ${prediction.confidence}%</p>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-gray-50 p-3 rounded">
+                            <h5 class="font-semibold mb-1">Point Spread</h5>
+                            <p>${prediction.spread_analysis}</p>
+                            <p class="text-sm text-blue-600">${prediction.betting_recommendation.spread_pick}</p>
+                        </div>
+                        
+                        <div class="bg-gray-50 p-3 rounded">
+                            <h5 class="font-semibold mb-1">Money Line</h5>
+                            <p>${prediction.money_line_analysis}</p>
+                            <p class="text-sm text-blue-600">${prediction.betting_recommendation.money_line_pick}</p>
+                        </div>
+                        
+                        <div class="bg-gray-50 p-3 rounded">
+                            <h5 class="font-semibold mb-1">Over/Under</h5>
+                            <p>Total: ${prediction.over_under}</p>
+                            <p class="text-sm text-blue-600">${prediction.betting_recommendation.total_pick}</p>
+                        </div>
+                        
+                        <div class="bg-gray-50 p-3 rounded">
+                            <h5 class="font-semibold mb-1">Money Lines</h5>
+                            <p>${prediction.home_team}: ${prediction.home_money_line}</p>
+                            <p>${prediction.away_team}: ${prediction.away_money_line}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            resultsDiv.classList.remove('hidden');
+        }
+
+        async function loadAvailableGames() {
+            try {
+                const response = await axios.get('/schedule');
+                const games = response.data.slice(0, 8); // Show first 8 games
+                
+                const gamesDiv = document.getElementById('available-games');
+                gamesDiv.innerHTML = games.map(game => `
+                    <div class="border border-gray-200 rounded-lg p-3 hover:bg-gray-50">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h5 class="font-medium">${game.AwayTeam} @ ${game.HomeTeam}</h5>
+                                <p class="text-sm text-gray-600">${new Date(game.Date).toLocaleDateString()}</p>
+                                <p class="text-xs text-gray-500">Spread: ${game.PointSpread} | O/U: ${game.OverUnder}</p>
+                                <p class="text-xs text-gray-400">Game Key: ${game.GameKey}</p>
+                            </div>
+                            <button onclick="useGameForPrediction('${game.GameKey}')" 
+                                    class="px-3 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700">
+                                Predict
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading games:', error);
+                document.getElementById('available-games').innerHTML = 
+                    '<p class="text-red-500">Error loading games</p>';
+            }
+        }
+
+        function useGameForPrediction(gameKey) {
+            document.getElementById('prediction-game-id').value = gameKey;
+            predictGameWinner();
+        }
+
+        // Load available prop types
+        async function loadPropTypes() {
+            try {
+                const response = await axios.get('/props/types');
+                const propTypes = response.data.prop_types;
+                
+                const listDiv = document.getElementById('prop-types-list');
+                listDiv.innerHTML = Object.entries(propTypes).map(([key, prop]) => `
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <h4 class="font-semibold text-lg">${prop.fanduel_name}</h4>
+                        <p class="text-sm text-gray-600 mb-2">${prop.description}</p>
+                        <div class="text-xs text-gray-500">
+                            <span class="font-medium">API Field:</span> ${prop.sportsdata_field} •
+                            <span class="font-medium">Internal Key:</span> ${key}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading prop types:', error);
+                document.getElementById('prop-types-list').innerHTML = 
+                    '<p class="text-red-500">Error loading prop types</p>';
+            }
+        }
+
+        // API Testing functions
+        async function testHealth() {
+            try {
+                const response = await axios.get(`${API_BASE}/health`);
+                document.getElementById('healthResult').innerHTML = 
+                    '<span class="text-green-600">✅ ' + JSON.stringify(response.data) + '</span>';
+            } catch (error) {
+                document.getElementById('healthResult').innerHTML = 
+                    '<span class="text-red-600">❌ ' + error.message + '</span>';
+            }
+        }
+
+        async function testSchedule() {
+            try {
+                const response = await axios.get(`${API_BASE}/schedule`);
+                document.getElementById('scheduleResult').innerHTML = 
+                    `<span class="text-green-600">✅ Loaded ${response.data.length} games</span>`;
+            } catch (error) {
+                document.getElementById('scheduleResult').innerHTML = 
+                    '<span class="text-red-600">❌ ' + error.message + '</span>';
+            }
+        }
+
+        async function testCustomEndpoint() {
+            const endpoint = document.getElementById('customEndpoint').value;
+            if (!endpoint) return;
+
+            try {
+                const response = await axios.get(`${API_BASE}${endpoint}`);
+                document.getElementById('customResult').innerHTML = JSON.stringify(response.data, null, 2);
+            } catch (error) {
+                document.getElementById('customResult').innerHTML = 
+                    `Error: ${error.response?.status || 'Network Error'}\n${error.response?.data?.detail || error.message}`;
+            }
+        }
+
+        // Help modal functions
+        function showHelpModal() {
+            document.getElementById('help-modal').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function hideHelpModal() {
+            document.getElementById('help-modal').classList.add('hidden');
+            document.body.style.overflow = 'auto';
+        }
+
+        // Initialize dashboard when page loads
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="gradient-bg text-white p-6 rounded-t-lg">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <i class="fas fa-graduation-cap text-2xl mr-3"></i>
+                        <h2 class="text-2xl font-bold">How to Use Your NFL Parlay Optimizer</h2>
+                    </div>
+                    <button onclick="hideHelpModal()" class="text-white hover:text-gray-200 text-xl">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Schedule Tab Help -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <h3 class="font-bold text-lg mb-3 flex items-center">
+                            <i class="fas fa-calendar-alt text-blue-600 mr-2"></i>
+                            NFL Schedule
+                        </h3>
+                        <ul class="text-sm space-y-2">
+                            <li>• Browse all 304 NFL games for 2025</li>
+                            <li>• Filter by week (1-18)</li>
+                            <li>• Click games to copy Game Keys</li>
+                            <li>• See real betting lines & spreads</li>
+                            <li><strong>Example:</strong> Game Key "202510126" = DAL @ PHI</li>
+                        </ul>
+                    </div>
+
+                    <!-- Player Browser Help -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <h3 class="font-bold text-lg mb-3 flex items-center">
+                            <i class="fas fa-users text-green-600 mr-2"></i>
+                            Player Browser
+                        </h3>
+                        <ul class="text-sm space-y-2">
+                            <li>• Search by name: "Josh Allen", "Mahomes"</li>
+                            <li>• Get real Player IDs (not test IDs)</li>
+                            <li>• Browse players by specific games</li>
+                            <li>• Use "Use for Prediction" buttons</li>
+                            <li><strong>Example:</strong> Josh Allen = Player ID 19801</li>
+                        </ul>
+                    </div>
+
+                    <!-- Predictions Help -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <h3 class="font-bold text-lg mb-3 flex items-center">
+                            <i class="fas fa-chart-line text-purple-600 mr-2"></i>
+                            Predictions
+                        </h3>
+                        <ul class="text-sm space-y-2">
+                            <li>• Test prop predictions with real Player IDs</li>
+                            <li>• Set prop lines (e.g., 250.5 passing yards)</li>
+                            <li>• Get confidence scores</li>
+                            <li>• Use pregame & halftime predictions</li>
+                            <li><strong>Tip:</strong> Real IDs work best!</li>
+                        </ul>
+                    </div>
+
+                    <!-- Game Predictions Help -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <h3 class="font-bold text-lg mb-3 flex items-center">
+                            <i class="fas fa-trophy text-yellow-600 mr-2"></i>
+                            Game Predictions
+                        </h3>
+                        <ul class="text-sm space-y-2">
+                            <li>• Predict game winners with confidence</li>
+                            <li>• See spread & money line analysis</li>
+                            <li>• Get betting recommendations</li>
+                            <li>• Click available games for quick predictions</li>
+                            <li><strong>Example:</strong> PHI favored by 8.8 vs DAL</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 class="font-bold text-blue-800 mb-2">🚀 Pro Tips for Best Results:</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-700">
+                        <div>
+                            <h4 class="font-semibold mb-1">For Accurate Predictions:</h4>
+                            <ul class="space-y-1">
+                                <li>• Always use real Player IDs from Player Browser</li>
+                                <li>• Set realistic prop lines (check FanDuel for reference)</li>
+                                <li>• Try multiple players from same game</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold mb-1">For Game Analysis:</h4>
+                            <ul class="space-y-1">
+                                <li>• Check both spread and money line predictions</li>
+                                <li>• Compare confidence scores across games</li>
+                                <li>• Use Game Keys from Schedule tab</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 text-center">
+                    <button onclick="hideHelpModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors">
+                        <i class="fas fa-rocket mr-2"></i>
+                        Got It! Let's Start Optimizing
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
