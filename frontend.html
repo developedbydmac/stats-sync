@@ -907,11 +907,11 @@
             document.getElementById('no-players-message').classList.add('hidden');
 
             try {
-                const response = await axios.get(`/players/search?name=${encodeURIComponent(searchTerm)}`);
-                displayPlayerResults(response.data.players, `Search Results for "${searchTerm}"`);
+                const response = await apiCall(`/players/search?name=${encodeURIComponent(searchTerm)}`);
+                displayPlayerResults(response.players, `Search Results for "${searchTerm}"`);
                 
-                if (response.data.players && response.data.players.length > 0) {
-                    showSuccess(`Found ${response.data.players.length} players!`);
+                if (response.players && response.players.length > 0) {
+                    showSuccess(`Found ${response.players.length} players!`);
                 }
             } catch (error) {
                 console.error('Error searching players:', error);
@@ -933,11 +933,11 @@
             document.getElementById('no-players-message').classList.add('hidden');
 
             try {
-                const response = await axios.get(`/players/game/${gameId}`);
-                displayPlayerResults(response.data.players, `Players in Game ${gameId}`);
+                const response = await apiCall(`/players/game/${gameId}`);
+                displayPlayerResults(response.players, `Players in Game ${gameId}`);
                 
-                if (response.data.players && response.data.players.length > 0) {
-                    showSuccess(`Found ${response.data.players.length} players in this game!`);
+                if (response.players && response.players.length > 0) {
+                    showSuccess(`Found ${response.players.length} players in this game!`);
                 } else {
                     document.getElementById('no-players-message').classList.remove('hidden');
                 }
@@ -1040,8 +1040,8 @@
             }
 
             try {
-                const response = await axios.get(`/predictions/win/${gameId}`);
-                displayPredictionResults(response.data);
+                const response = await apiCall(`/predictions/win/${gameId}`);
+                displayPredictionResults(response);
             } catch (error) {
                 console.error('Error predicting game winner:', error);
                 alert('Error predicting game winner. Check the Game Key.');
@@ -1093,8 +1093,8 @@
 
         async function loadAvailableGames() {
             try {
-                const response = await axios.get('/schedule');
-                const games = response.data.slice(0, 8); // Show first 8 games
+                const response = await apiCall('/schedule');
+                const games = response.slice(0, 8); // Show first 8 games
                 
                 const gamesDiv = document.getElementById('available-games');
                 gamesDiv.innerHTML = games.map(game => `
@@ -1128,8 +1128,8 @@
         // Load available prop types
         async function loadPropTypes() {
             try {
-                const response = await axios.get('/props/types');
-                const propTypes = response.data.prop_types;
+                const response = await apiCall('/props/types');
+                const propTypes = response.prop_types;
                 
                 const listDiv = document.getElementById('prop-types-list');
                 listDiv.innerHTML = Object.entries(propTypes).map(([key, prop]) => `
@@ -1152,9 +1152,9 @@
         // API Testing functions
         async function testHealth() {
             try {
-                const response = await axios.get(`${API_BASE}/health`);
+                const response = await apiCall('/health');
                 document.getElementById('healthResult').innerHTML = 
-                    '<span class="text-green-600">✅ ' + JSON.stringify(response.data) + '</span>';
+                    '<span class="text-green-600">✅ ' + JSON.stringify(response) + '</span>';
             } catch (error) {
                 document.getElementById('healthResult').innerHTML = 
                     '<span class="text-red-600">❌ ' + error.message + '</span>';
@@ -1163,9 +1163,9 @@
 
         async function testSchedule() {
             try {
-                const response = await axios.get(`${API_BASE}/schedule`);
+                const response = await apiCall('/schedule');
                 document.getElementById('scheduleResult').innerHTML = 
-                    `<span class="text-green-600">✅ Loaded ${response.data.length} games</span>`;
+                    `<span class="text-green-600">✅ Loaded ${response.length} games</span>`;
             } catch (error) {
                 document.getElementById('scheduleResult').innerHTML = 
                     '<span class="text-red-600">❌ ' + error.message + '</span>';
@@ -1177,11 +1177,11 @@
             if (!endpoint) return;
 
             try {
-                const response = await axios.get(`${API_BASE}${endpoint}`);
-                document.getElementById('customResult').innerHTML = JSON.stringify(response.data, null, 2);
+                const response = await apiCall(endpoint);
+                document.getElementById('customResult').innerHTML = JSON.stringify(response, null, 2);
             } catch (error) {
                 document.getElementById('customResult').innerHTML = 
-                    `Error: ${error.response?.status || 'Network Error'}\n${error.response?.data?.detail || error.message}`;
+                    `Error: ${error.status || 'Network Error'}\n${error.message}`;
             }
         }
 
