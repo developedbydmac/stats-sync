@@ -2,6 +2,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 import uvicorn
 import os
 from dotenv import load_dotenv
@@ -13,11 +16,32 @@ from sportsdata import SportsDataService
 # Load environment variables
 load_dotenv()
 
+# Custom caching middleware for mobile performance
+class CacheControlMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        
+        # Add cache headers for static content and API responses
+        if request.url.path.endswith(('.css', '.js', '.png', '.jpg', '.svg')):
+            response.headers["Cache-Control"] = "public, max-age=86400"  # 24 hours
+        elif request.url.path.startswith('/schedule') or request.url.path.startswith('/props'):
+            response.headers["Cache-Control"] = "public, max-age=300"   # 5 minutes
+        elif request.url.path == '/health':
+            response.headers["Cache-Control"] = "public, max-age=60"    # 1 minute
+        
+        return response
+
 app = FastAPI(
     title="Stats Sync API",
     description="Sports prediction API with SportsDataIO integration",
     version="1.0.0"
 )
+
+# Add compression for mobile performance
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Add caching middleware
+app.add_middleware(CacheControlMiddleware)
 
 # Configure CORS
 app.add_middleware(

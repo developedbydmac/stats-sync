@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🏈 NFL Stats Sync - Parlay Optimizer Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         .tab-content { display: none; }
@@ -48,6 +47,15 @@
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
+    <!-- Global Loading Overlay for Mobile -->
+    <div id="globalLoading" class="fixed inset-0 bg-white bg-opacity-90 flex items-center justify-center z-50" style="display: none;">
+        <div class="text-center">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+            <p class="text-gray-600 font-medium">Loading NFL data...</p>
+            <p class="text-sm text-gray-500 mt-2">Optimized for mobile</p>
+        </div>
+    </div>
+    
     <!-- Header -->
     <header class="gradient-bg text-white shadow-lg">
         <div class="container mx-auto px-6 py-4">
@@ -475,9 +483,67 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8001';
+        // Global loading functions for mobile performance
+        function showGlobalLoading() {
+            document.getElementById('globalLoading').style.display = 'flex';
+        }
+        
+        function hideGlobalLoading() {
+            document.getElementById('globalLoading').style.display = 'none';
+        }
+        
+        // Enhanced API call with mobile optimizations
+        async function apiCall(endpoint, options = {}) {
+            showGlobalLoading();
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, {
+                    ...options,
+                    headers: {
+                        'Accept': 'application/json',
+                        'Cache-Control': 'public, max-age=300', // 5 minute cache
+                        ...options.headers
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                return await response.json();
+            } catch (error) {
+                console.error('API call failed:', error);
+                throw error;
+            } finally {
+                hideGlobalLoading();
+            }
+        }
+
+        // Auto-detect API base URL for local vs production
+        const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? 'http://localhost:8002' 
+            : window.location.origin;
         let allGames = [];
         let selectedGame = null;
+        
+        // Performance optimization - Cache for mobile
+        const cache = new Map();
+        const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+        
+        // Mobile detection
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        // Cache helper functions
+        function getCachedData(key) {
+            const cached = cache.get(key);
+            if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+                return cached.data;
+            }
+            return null;
+        }
+        
+        function setCachedData(key, data) {
+            cache.set(key, { data, timestamp: Date.now() });
+        }
 
         // Enhanced initialization
         async function init() {
@@ -504,7 +570,7 @@
         // Enhanced API status check
         async function checkApiStatus() {
             try {
-                const response = await axios.get('/health');
+                const response = await apiCall('/health');
                 document.getElementById('apiStatus').innerHTML = 
                     '<div class="w-2 h-2 bg-green-400 rounded-full"></div><span class="text-sm">Connected</span>';
                 showSuccess('API Connected Successfully!');
@@ -518,8 +584,8 @@
             try {
                 document.getElementById('gamesGrid').innerHTML = '<div class="col-span-full text-center py-8">Loading schedule...</div>';
                 
-                const response = await axios.get(`${API_BASE}/schedule`);
-                allGames = response.data;
+                const response = await apiCall('/schedule');
+                allGames = response;
                 
                 // Populate week filter
                 const weeks = [...new Set(allGames.map(game => game.Week))].sort((a, b) => a - b);
@@ -627,8 +693,8 @@
                 document.getElementById('playerProps').classList.remove('hidden');
                 document.getElementById('propsContainer').innerHTML = '<div class="text-center py-4">Loading player props...</div>';
                 
-                const response = await axios.get(`${API_BASE}/props/${gameKey}`);
-                const props = response.data;
+                const response = await apiCall(`/props/${gameKey}`);
+                const props = response;
                 
                 if (props.length === 0) {
                     document.getElementById('propsContainer').innerHTML = 
